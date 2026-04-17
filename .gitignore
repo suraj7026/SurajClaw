@@ -136,6 +136,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -143,6 +145,51 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# ---------------------------------------------------------------------------
+# Secrets / credentials  --- NEVER COMMIT
+# ---------------------------------------------------------------------------
+# Google OAuth client JSONs (download filename is
+# `client_secret_<id>.apps.googleusercontent.com.json`).
+client_secret*.json
+# Per-account OAuth tokens written by `manage.py google_oauth_login`.
+google_token.json
+google_token*.json
+google_tokens/
+# Generic credentials/keys that sometimes sneak in.
+credentials/
+credentials.json
+*.pem
+*.p12
+*.pfx
+*.key
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+service_account*.json
+gha-credentials*.json
+# ---------------------------------------------------------------------------
+
+# DB dumps / backups
+backups/
+*.sql
+*.dump
+
+# Staticfiles / media (collected output, not source)
+staticfiles/
+media/
+
+# Notes runtime dir (agent-managed, not source)
+notes/
+!notes/.gitkeep
+
+# Workspace (agent sandbox, not source)
+workspace/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Spyder project settings
 .spyderproject

@@ -87,7 +87,7 @@ export default function Pipeline() {
     return map;
   }, [state]);
 
-  const activeModel = stateMap.active_model || stateMap.last_model || "gemma3:4b";
+  const activeModel = stateMap.active_model || stateMap.last_model || "gemma4:e2b";
   const agentMode = stateMap.agent_mode || "balanced";
   const lastDream = dreams?.results?.[0];
 

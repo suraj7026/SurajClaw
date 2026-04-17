@@ -25,7 +25,13 @@
 <script>
     const sessionId = crypto.randomUUID();
     const wsScheme = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${wsScheme}://${location.host}/ws/chat/${sessionId}/`);
+    // ?as=<id> identifies the unauthenticated browser to the owner allowlist.
+    // Override per-tab with `?as=...` on the URL; defaults to "local".
+    const params = new URLSearchParams(location.search);
+    const as = params.get("as") || "local";
+    const ws = new WebSocket(
+        `${wsScheme}://${location.host}/ws/chat/${sessionId}/?as=${encodeURIComponent(as)}`
+    );
 
     const messagesEl = document.getElementById("messages");
     const form = document.getElementById("chat-form");
@@ -49,6 +55,9 @@
         if (data.type === "token") {
             if (!currentAssistantEl) currentAssistantEl = appendMessage("assistant", "");
             currentAssistantEl.textContent += data.content;
+        } else if (data.type === "command_result") {
+            appendMessage("assistant", data.content);
+            currentAssistantEl = null;
         } else if (data.type === "done") {
             currentAssistantEl = null;
         } else if (data.type === "approval") {

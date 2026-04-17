@@ -47,6 +47,18 @@ app.conf.beat_schedule = {
         "task": "scheduler.tasks.approval_expire",
         "schedule": crontab(minute="*"),
     },
+    # Adapted from OpenClaw's cron service: poll the CronJob table every 30s.
+    # Lower bound is 30s because crontab() doesn't go finer than a minute and
+    # we use a timedelta below so jobs scheduled near a boundary don't drift.
+    "cron-job-poll": {
+        "task": "scheduler.cron_runner.cron_job_poll",
+        "schedule": 30.0,  # seconds
+    },
+    # Renew Gmail Pub/Sub watch every 24h (the watch itself expires after 7d).
+    "gmail-watch-renew": {
+        "task": "scheduler.gmail_watch.gmail_watch_renew",
+        "schedule": crontab(minute=0, hour=4),
+    },
 }
 
 

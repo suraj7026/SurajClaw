@@ -10,7 +10,11 @@
 #   - Nginx is expected on the host (systemd-managed), not in this compose.
 
 services:
+  # Local Postgres is opt-in. Default is to use the remote DB declared in .env
+  # (POSTGRES_HOST). Bring up the local one with:
+  #   docker compose --profile local-db up -d db
   db:
+    profiles: ["local-db"]
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
@@ -49,9 +53,17 @@ services:
              python manage.py collectstatic --noinput &&
              daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.production
-      POSTGRES_HOST: db
+      # First-run defaults to dev settings so DEBUG=on and ALLOWED_HOSTS=*.
+      # Flip to config.settings.production via your .env when you put nginx
+      # in front and have a real DJANGO_SECRET_KEY + ALLOWED_HOSTS.
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
+      # POSTGRES_HOST comes from .env (remote DB by default). To use the local
+      # opt-in `db` service: `--profile local-db up` and set POSTGRES_HOST=db.
       REDIS_HOST: redis
+      # Inside the container, "127.0.0.1" is the container itself, not the host.
+      # Point Ollama at host.docker.internal so the host-installed Ollama (with
+      # GPU access) is reachable. Override in .env if you run Ollama elsewhere.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
     env_file:
       - ../.env
     ports:
@@ -60,9 +72,11 @@ services:
       - ./:/app
       - surajclaw_staticfiles:/app/staticfiles
       - surajclaw_notes:/app/notes
+    extra_hosts:
+      # Lets the container hit Ollama running on the host (Linux + macOS).
+      # On macOS this is automatic; on Linux it needs this explicit mapping.
+      - "host.docker.internal:host-gateway"
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -71,17 +85,17 @@ services:
     restart: unless-stopped
     command: celery -A config worker -l info --concurrency=2
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.production
-      POSTGRES_HOST: db
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
       REDIS_HOST: redis
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
     env_file:
       - ../.env
     volumes:
       - ./:/app
       - surajclaw_notes:/app/notes
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -90,18 +104,36 @@ services:
     restart: unless-stopped
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.production
-      POSTGRES_HOST: db
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
       REDIS_HOST: redis
     env_file:
       - ../.env
     volumes:
       - ./:/app
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
+
+  # React dashboard. Default `dev` target runs Vite with HMR; override the
+  # build target to `nginx` for a production image (and bind to 80/443 behind
+  # your real nginx instead of mapping 5173).
+  ui:
+    build:
+      context: ./ui
+      target: dev
+    restart: unless-stopped
+    environment:
+      # Vite needs to know where the Django backend lives so the proxy can
+      # forward /api and /ws calls. `web` is the compose service name.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://web:8000}
+      VITE_WS_BASE_URL: ${VITE_WS_BASE_URL:-ws://web:8000}
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./ui:/app
+      - surajclaw_ui_node_modules:/app/node_modules
+    depends_on:
+      - web
 
   # Uncomment to run Ollama in-compose. Typically you'll instead install
   # Ollama on the host so it can see the GPU (/dev/nvidia*).
@@ -124,4 +156,5 @@ volumes:
   surajclaw_redisdata:
   surajclaw_staticfiles:
   surajclaw_notes:
+  surajclaw_ui_node_modules:
   # surajclaw_ollama:

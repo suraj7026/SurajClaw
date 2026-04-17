@@ -105,8 +105,17 @@ def _get_graph():
     return _compiled
 
 
-def run_turn(session_id: str, message: str, source: str = "web") -> str:
+def run_turn(
+    session_id: str,
+    message: str,
+    source: str = "web",
+    directives: dict | None = None,
+) -> str:
     """Execute one agent turn and stream tokens back via Channels.
+
+    ``directives`` carries per-turn overrides parsed from inline ``!key value``
+    syntax. Stored on the LangGraph state so any node (router, executor) can
+    consult them.
 
     Returns the final response text (also persisted as a Message row).
     """
@@ -122,7 +131,7 @@ def run_turn(session_id: str, message: str, source: str = "web") -> str:
             "current_step": 0,
             "tool_calls": [],
             "tool_results": [],
-            "context": {},
+            "context": {"directives": directives or {}},
             "messages": [],
         }
         state = graph.invoke(initial)

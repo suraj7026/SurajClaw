@@ -38,6 +38,9 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
+    "rest_framework.authtoken",
+    "corsheaders",
+    "django_filters",
     "channels",
     "django_celery_beat",
     "pgvector.django",
@@ -59,6 +62,9 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # CorsMiddleware must come before CommonMiddleware so it can short-circuit
+    # CORS preflight (OPTIONS) requests before any other processing happens.
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -170,6 +176,12 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "PAGE_SIZE": 50,
 }
 
 # ---------------------------------------------------------------------------
@@ -202,8 +214,22 @@ GOOGLE_TOKEN_PATH = os.environ.get(
     "GOOGLE_TOKEN_PATH",
     str(BASE_DIR.parent / "google_token.json"),
 )
+# Multi-account: each connected Google account gets its own `<label>.json` in
+# this directory. `GOOGLE_TOKEN_PATH` above is kept as a backward-compat
+# single-account fallback that we expose as the "default" account.
+GOOGLE_TOKEN_DIR = os.environ.get(
+    "GOOGLE_TOKEN_DIR",
+    str(BASE_DIR.parent / "google_tokens"),
+)
 GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY", "")
 GOOGLE_SEARCH_CX = os.environ.get("GOOGLE_SEARCH_CX", "")
+
+# Where to bounce the operator after a Google OAuth web flow finishes. The
+# `/integrations` page on the React UI reads `?google=ok&label=...` to show
+# a toast. Override per-environment if the dashboard isn't served at root.
+FRONTEND_INTEGRATIONS_URL = os.environ.get(
+    "FRONTEND_INTEGRATIONS_URL", "/integrations"
+)
 
 # ---------------------------------------------------------------------------
 # Telegram / notifications
@@ -211,6 +237,23 @@ GOOGLE_SEARCH_CX = os.environ.get("GOOGLE_SEARCH_CX", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 TELEGRAM_OWNER_ID = os.environ.get("TELEGRAM_OWNER_ID", "")
+
+# ---------------------------------------------------------------------------
+# Owner allowlist (adapted from OpenClaw's commands.allowFrom)
+# ---------------------------------------------------------------------------
+# Comma-separated list of authorized senders. Each entry is either a bare
+# id (`123456`) applied globally, or a `channel:id` qualifier
+# (`telegram:123456,web:user@example.com`). `*` is a wildcard.
+OWNER_ALLOW_FROM = os.environ.get("OWNER_ALLOW_FROM", "")
+
+# ---------------------------------------------------------------------------
+# Gmail Pub/Sub watch
+# ---------------------------------------------------------------------------
+# Full topic name that the gmail-watch-renew Celery task re-registers daily.
+# Format: projects/<project-id>/topics/<topic-name>
+GMAIL_PUBSUB_TOPIC = os.environ.get("GMAIL_PUBSUB_TOPIC", "")
+# JSON array of label ids to watch; defaults to ["INBOX"] when blank.
+GMAIL_LABEL_IDS = os.environ.get("GMAIL_LABEL_IDS", "")
 
 # ---------------------------------------------------------------------------
 # Dream system

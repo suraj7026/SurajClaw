@@ -2,6 +2,8 @@ from django.contrib import admin
 
 from core.models import (
     AuditLog,
+    CronJob,
+    CronRun,
     DreamLog,
     FutureQueue,
     Message,
@@ -55,6 +57,40 @@ class FutureQueueAdmin(admin.ModelAdmin):
     list_display = ("id", "status", "trigger_type", "due_at", "created_at")
     list_filter = ("status", "trigger_type")
     search_fields = ("intent",)
+
+
+@admin.register(CronJob)
+class CronJobAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "schedule_kind",
+        "schedule_value",
+        "status",
+        "next_run_at",
+        "last_run_at",
+        "last_run_status",
+        "consecutive_failures",
+    )
+    list_filter = ("status", "schedule_kind", "delivery_mode")
+    search_fields = ("name", "description", "prompt")
+    ordering = ("next_run_at",)
+
+
+@admin.register(CronRun)
+class CronRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "job",
+        "status",
+        "started_at",
+        "duration_ms",
+        "model_used",
+        "delivery_status",
+    )
+    list_filter = ("status", "model_used")
+    search_fields = ("summary", "error_text")
+    ordering = ("-started_at",)
+    readonly_fields = tuple(f.name for f in CronRun._meta.fields)
 
 
 @admin.register(DreamLog)

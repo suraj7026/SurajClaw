@@ -1,0 +1,41 @@
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Python build artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Virtualenvs (host-only; containers use system Python)
+.venv
+venv
+env
+
+# Local/runtime state that should never bake into the image
+*.sqlite3
+db.sqlite3
+staticfiles/
+notes/
+backups/
+
+# Logs / dotfiles
+*.log
+.DS_Store
+
+# Frontend (built separately by the `ui` service)
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
+# Secrets — must come from `env_file` at runtime, never copied in
+.env
+.env.*
+client_secret*.json
+google_token.json
+google_tokens/

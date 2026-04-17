@@ -36,6 +36,7 @@ workspace/
 # Secrets / credentials (never commit)
 client_secret*.json
 google_token.json
+google_tokens/
 credentials/
 
 # DB backups

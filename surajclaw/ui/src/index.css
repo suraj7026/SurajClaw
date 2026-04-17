@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Base
+ * ------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: theme("fontFamily.sans");
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(129, 236, 255, 0.05), transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(255, 191, 0, 0.04), transparent 60%),
+    theme("colors.bg.base");
+  background-attachment: fixed;
+}
+
+/* Material Symbols default sizing — match Tailwind text-base. */
+.material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 300,
+    "GRAD" 0,
+    "opsz" 24;
+  vertical-align: middle;
+  line-height: 1;
+}
+.icon-fill .material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 1,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+}
+
+/* ---------------------------------------------------------------------------
+ * Component primitives
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .panel {
+    @apply bg-bg-surface border border-border rounded-lg;
+  }
+  .panel-raised {
+    @apply bg-bg-raised border border-border rounded-lg;
+  }
+  .panel-header {
+    @apply px-4 py-3 border-b border-border flex items-center justify-between;
+  }
+  .panel-body {
+    @apply p-4;
+  }
+  .label-mono {
+    @apply font-mono text-[10px] tracking-[0.2em] uppercase text-ink-mute;
+  }
+  .label-display {
+    @apply font-display text-xs tracking-wider uppercase text-ink-dim;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-display
+      uppercase tracking-wider border border-border rounded text-ink
+      hover:border-primary hover:text-primary transition-colors
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn border-primary/50 text-primary hover:bg-primary/10;
+  }
+  .btn-danger {
+    @apply btn border-danger/40 text-danger hover:bg-danger/10 hover:border-danger;
+  }
+  .input {
+    @apply bg-bg-base border border-border rounded px-3 py-2 text-sm text-ink
+      placeholder:text-ink-mute focus:outline-none focus:border-primary
+      focus:shadow-glow transition-all;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(129, 236, 255, 0.18) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: rgba(129, 236, 255, 0.18);
+    border-radius: 3px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Cyberpunk accents
+ * ------------------------------------------------------------------------- */
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(129, 236, 255, 0.06) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: scan 4s linear infinite;
+}
+
+.divider-glow {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(129, 236, 255, 0.45),
+    transparent
+  );
+  height: 1px;
+}

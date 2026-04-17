@@ -13,28 +13,110 @@ from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
+# Celery's autodiscover_tasks() only imports `scheduler.tasks`. Side-import the
+# sibling task modules here so their @shared_task decorators register on the
+# worker (otherwise beat fires e.g. `cron_job_poll` and the worker rejects it
+# as "Received unregistered task of type ...").
+from scheduler import cron_runner, dream_worker, gmail_watch  # noqa: E402, F401
+
 
 # ---------------------------------------------------------------------------
 # Agent dispatch
 # ---------------------------------------------------------------------------
 @shared_task
-def run_agent_turn(session_id: str, message: str, source: str = "web") -> None:
+def run_agent_turn(
+    session_id: str,
+    message: str,
+    source: str = "web",
+    directives: dict[str, Any] | None = None,
+) -> None:
     """Execute one agent turn for an inbound user message.
 
-    Wires up input → LangGraph → channel-layer streaming back to the WS.
-    The concrete implementation is added as part of the agents module.
+    ``directives`` carries per-turn overrides parsed from inline ``!key value``
+    syntax (model pin, thinking budget, tool allow-list). They flow through to
+    the model router via ``run_turn``.
     """
     from agents.graph import run_turn  # local import: heavy LangGraph deps
 
-    run_turn(session_id=session_id, message=message, source=source)
+    run_turn(
+        session_id=session_id,
+        message=message,
+        source=source,
+        directives=directives or {},
+    )
 
 
 # ---------------------------------------------------------------------------
 # Webhook dispatch (kept async so webhook handlers return 200 fast)
 # ---------------------------------------------------------------------------
 @shared_task
-def handle_telegram_update(update: dict[str, Any]) -> None:
+def handle_telegram_update(
+    update: dict[str, Any],
+    sender_id: str | None = None,
+    chat_id: str | None = None,
+    text: str = "",
+) -> None:
+    """Run the telegram message through the same command pipeline as web chat."""
+    from chat.auth import is_owner
+    from chat.commands import (
+        CommandContext,
+        detect as detect_command,
+        dispatch as dispatch_command,
+    )
+    from chat.directives import parse as parse_directives
+
     logger.info("telegram update received: %s", update.get("update_id"))
+    if not text or not chat_id:
+        return
+
+    session_id = f"telegram:{chat_id}"
+    is_authorized = is_owner("telegram", sender_id)
+
+    match = detect_command(text)
+    if match is not None:
+        ctx = CommandContext(
+            session_id=session_id,
+            sender_id=sender_id,
+            channel="telegram",
+            args=match.args,
+            is_owner=is_authorized,
+        )
+        result = dispatch_command(match, ctx)
+        _telegram_send(chat_id, result.text)
+        return
+
+    directives, body = parse_directives(text)
+    if not body:
+        return
+    run_agent_turn.delay(
+        session_id=session_id,
+        message=body,
+        source="telegram",
+        directives={
+            "model": directives.model,
+            "thinking": directives.thinking,
+            "tools_allow": directives.tools_allow,
+        },
+    )
+
+
+def _telegram_send(chat_id: str, text: str) -> None:
+    """Best-effort sendMessage to Telegram. Logs and swallows failures."""
+    from django.conf import settings
+
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token or not text:
+        return
+    try:
+        import urllib.parse
+        import urllib.request
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+        req = urllib.request.Request(url, data=data, method="POST")
+        urllib.request.urlopen(req, timeout=5).read()  # noqa: S310 -- official API
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram sendMessage failed: %s", exc)
 
 
 @shared_task

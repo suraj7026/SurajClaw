@@ -7,6 +7,8 @@ Models are added in phase order (see the architecture plan). Phase 1 ships
 foundation tables: Session, Message, SystemState.
 """
 from core.models.audit_log import AuditLog
+from core.models.cron_job import CronJob
+from core.models.cron_run import CronRun
 from core.models.dream_log import DreamLog
 from core.models.future_queue import FutureQueue
 from core.models.message import Message
@@ -16,6 +18,8 @@ from core.models.task import Task
 
 __all__ = [
     "AuditLog",
+    "CronJob",
+    "CronRun",
     "DreamLog",
     "FutureQueue",
     "Message",

@@ -27,7 +27,42 @@ class ModelChoice:
 SIMPLE_TOKEN_BUDGET = 4_000  # Gemma comfort zone on 4GB GPU
 
 
-def route(prompt: str, *, requires_tools: bool, complexity_hint: str = "") -> ModelChoice:
+def route(
+    prompt: str,
+    *,
+    requires_tools: bool,
+    complexity_hint: str = "",
+    session_id: str | None = None,
+    directive_model: str | None = None,
+) -> ModelChoice:
+    """Pick a model for this turn.
+
+    Priority order (highest first):
+
+    1. ``directive_model`` — user typed ``!model gemini`` for this turn.
+    2. Per-session pin set via ``/model`` slash command (SystemState row
+       ``model_pin:<session_id>``).
+    3. Legacy ``--gemini`` substring + planner-supplied complexity hint.
+    4. Token-budget heuristic.
+    5. Default to local Gemma.
+    """
+    explicit = (directive_model or "").lower()
+    if not explicit and session_id:
+        explicit = _read_session_pin(session_id)
+
+    if explicit == "gemini":
+        return ModelChoice(
+            provider="gemini",
+            model=settings.GEMINI_MODEL,
+            reason="explicit user directive: gemini",
+        )
+    if explicit in ("gemma", "ollama"):
+        return ModelChoice(
+            provider="ollama",
+            model=settings.OLLAMA_MODEL,
+            reason="explicit user directive: gemma",
+        )
+
     if "--gemini" in prompt.lower() or complexity_hint == "high":
         return ModelChoice(
             provider="gemini",
@@ -55,6 +90,24 @@ def route(prompt: str, *, requires_tools: bool, complexity_hint: str = "") -> Mo
         model=settings.OLLAMA_MODEL,
         reason="default: local gemma is sufficient",
     )
+
+
+def _read_session_pin(session_id: str) -> str:
+    """Read SystemState row written by ``/model`` slash command.
+
+    Lazy import: ``model_router`` is hot path; we don't want Django ORM
+    pulled in at module import for tests that only call ``route``.
+    """
+    try:
+        from core.models import SystemState
+    except ImportError:
+        return ""
+    try:
+        row = SystemState.objects.filter(key=f"model_pin:{session_id}").first()
+    except Exception as exc:  # noqa: BLE001 -- DB might not be migrated yet
+        logger.debug("model pin lookup failed: %s", exc)
+        return ""
+    return (row.value or "").lower() if row else ""
 
 
 def build_llm(choice: ModelChoice):

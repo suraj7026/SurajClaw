@@ -1,0 +1,127 @@
+# SurajClaw local dev + single-host production stack.
+#
+# Intentional choices:
+#   - `pgvector/pgvector:pg16` pre-ships the vector extension so migrations
+#     `CREATE EXTENSION IF NOT EXISTS vector` just work.
+#   - Redis handles both Celery broker + Django Channels layer.
+#   - Ollama is NOT in this compose on purpose; it usually runs directly on
+#     the host so the GPU is accessible. If you want a sidecar Ollama,
+#     uncomment the `ollama` service below.
+#   - Nginx is expected on the host (systemd-managed), not in this compose.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-surajclaw}
+      POSTGRES_USER: ${POSTGRES_USER:-surajclaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-surajclaw}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - surajclaw_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-surajclaw} -d ${POSTGRES_DB:-surajclaw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - surajclaw_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    env_file:
+      - ../.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./:/app
+      - surajclaw_staticfiles:/app/staticfiles
+      - surajclaw_notes:/app/notes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build: .
+    restart: unless-stopped
+    command: celery -A config worker -l info --concurrency=2
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    env_file:
+      - ../.env
+    volumes:
+      - ./:/app
+      - surajclaw_notes:/app/notes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build: .
+    restart: unless-stopped
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    env_file:
+      - ../.env
+    volumes:
+      - ./:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Uncomment to run Ollama in-compose. Typically you'll instead install
+  # Ollama on the host so it can see the GPU (/dev/nvidia*).
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:11434:11434"
+  #   volumes:
+  #     - surajclaw_ollama:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             capabilities: ["gpu"]
+
+volumes:
+  surajclaw_pgdata:
+  surajclaw_redisdata:
+  surajclaw_staticfiles:
+  surajclaw_notes:
+  # surajclaw_ollama:

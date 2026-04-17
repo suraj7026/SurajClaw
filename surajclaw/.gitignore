@@ -1,0 +1,51 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Django
+*.log
+*.sqlite3
+staticfiles/
+media/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Notes runtime dir (agent-managed)
+notes/*
+!notes/.gitkeep
+
+# Workspace (agent sandbox)
+workspace/
+
+# Secrets / credentials (never commit)
+client_secret*.json
+google_token.json
+credentials/
+
+# DB backups
+backups/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

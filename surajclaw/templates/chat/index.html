@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}SurajClaw Chat{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col max-w-3xl mx-auto w-full px-4 py-6">
+    <div id="messages" class="flex-1 space-y-3 overflow-y-auto mb-4"></div>
+
+    <form id="chat-form" class="flex gap-2">
+        <input
+            id="chat-input"
+            type="text"
+            placeholder="Ask SurajClaw..."
+            class="flex-1 bg-slate-900 border border-slate-800 rounded px-3 py-2 text-slate-100"
+            autocomplete="off"
+        />
+        <button
+            type="submit"
+            class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-2 font-medium"
+        >
+            Send
+        </button>
+    </form>
+</div>
+
+<script>
+    const sessionId = crypto.randomUUID();
+    const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${wsScheme}://${location.host}/ws/chat/${sessionId}/`);
+
+    const messagesEl = document.getElementById("messages");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("chat-input");
+
+    let currentAssistantEl = null;
+
+    function appendMessage(role, text) {
+        const el = document.createElement("div");
+        el.className =
+            "rounded p-3 " +
+            (role === "user" ? "bg-slate-800" : "bg-indigo-950 border border-indigo-900");
+        el.textContent = text;
+        messagesEl.appendChild(el);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return el;
+    }
+
+    ws.onmessage = (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.type === "token") {
+            if (!currentAssistantEl) currentAssistantEl = appendMessage("assistant", "");
+            currentAssistantEl.textContent += data.content;
+        } else if (data.type === "done") {
+            currentAssistantEl = null;
+        } else if (data.type === "approval") {
+            const ok = confirm("Approve? " + data.description);
+            fetch(`/approval/${data.request_id}/respond/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ decision: ok ? "approved" : "rejected", responded_by: "web" }),
+            });
+        }
+    };
+
+    form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        appendMessage("user", text);
+        ws.send(JSON.stringify({ message: text }));
+        input.value = "";
+    });
+</script>
+{% endblock %}

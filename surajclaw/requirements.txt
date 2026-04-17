@@ -1,0 +1,43 @@
+# --- Django core -----------------------------------------------------------
+Django>=5.0,<6.0
+djangorestframework>=3.15
+django-celery-beat>=2.6
+
+# --- Async / WebSocket -----------------------------------------------------
+channels>=4.0
+channels-redis>=4.2
+daphne>=4.1
+
+# --- Background tasks ------------------------------------------------------
+celery>=5.4
+redis>=5.0
+
+# --- Database --------------------------------------------------------------
+psycopg[binary]>=3.1
+pgvector>=0.3
+
+# --- LLM & Agents ----------------------------------------------------------
+langgraph>=0.2
+langchain>=0.2
+langchain-community>=0.2
+langchain-ollama>=0.2
+langchain-google-genai>=2.0
+
+# --- Google Workspace ------------------------------------------------------
+google-api-python-client>=2.120
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2
+
+# --- HTTP / parsing --------------------------------------------------------
+httpx>=0.27
+beautifulsoup4>=4.12
+feedparser>=6.0
+
+# --- Git operations --------------------------------------------------------
+gitpython>=3.1
+
+# --- Config / env ----------------------------------------------------------
+python-dotenv>=1.0
+
+# --- PDF / Markdown --------------------------------------------------------
+markdown>=3.6

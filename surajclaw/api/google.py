@@ -165,7 +165,6 @@ def connect_google_account(request: Request, label: str) -> Response:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     state = secrets.token_urlsafe(24)
-    cache.set(_STATE_CACHE_PREFIX + state, label, timeout=_STATE_TTL_SECONDS)
 
     redirect_uri = _redirect_uri(request)
     try:
@@ -183,6 +182,18 @@ def connect_google_account(request: Request, label: str) -> Response:
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
+    )
+
+    # Modern google-auth-oauthlib enables PKCE by default: `authorization_url`
+    # generates a `code_verifier`, sends a derived `code_challenge` to Google,
+    # and stores the verifier on the flow instance. Because the callback is a
+    # separate request that builds a fresh Flow, we must persist the verifier
+    # alongside the state token and restore it before `fetch_token`, or
+    # Google replies `invalid_grant: Missing code verifier`.
+    cache.set(
+        _STATE_CACHE_PREFIX + state,
+        {"label": label, "code_verifier": getattr(flow, "code_verifier", None)},
+        timeout=_STATE_TTL_SECONDS,
     )
     return Response({"auth_url": auth_url, "state": state, "label": label})
 
@@ -205,17 +216,28 @@ def google_oauth_callback(request: Request):
     if not state or not code:
         return _redirect_to_integrations(error="missing_state_or_code")
 
-    label = cache.get(_STATE_CACHE_PREFIX + state)
-    if not label:
+    cached = cache.get(_STATE_CACHE_PREFIX + state)
+    if not cached:
         return _redirect_to_integrations(error="invalid_or_expired_state")
     cache.delete(_STATE_CACHE_PREFIX + state)
 
-    if not LABEL_RE.match(label):
+    # Tolerate the legacy cache shape (raw label string) so old in-flight
+    # flows from before the PKCE fix don't 500.
+    if isinstance(cached, str):
+        label, code_verifier = cached, None
+    else:
+        label = cached.get("label", "")
+        code_verifier = cached.get("code_verifier")
+
+    if not label or not LABEL_RE.match(label):
         return _redirect_to_integrations(error="bad_label")
 
     redirect_uri = _redirect_uri(request)
     try:
         flow = _build_flow(redirect_uri=redirect_uri, state=state)
+        # Restore the PKCE verifier captured during the connect step.
+        if code_verifier:
+            flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         creds = flow.credentials
     except Exception as exc:  # noqa: BLE001

@@ -129,8 +129,17 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def _run_agent_turn(self, body: str, directives: dict[str, Any]) -> None:
         from agents.graph import run_turn
 
-        async def on_token(token: str) -> None:
-            await self.send_json({"type": "token", "content": token})
+        loop = asyncio.get_running_loop()
+
+        # `run_turn` runs inside a worker thread (sync_to_async). It calls
+        # `on_event` synchronously from there, so we shuttle each frame
+        # back to the consumer's event loop via `call_soon_threadsafe`.
+        # That keeps `self.send_json` on the right loop without blocking
+        # the agent thread on every token.
+        def on_event(payload: dict[str, Any]) -> None:
+            loop.call_soon_threadsafe(
+                lambda: asyncio.ensure_future(self.send_json(payload))
+            )
 
         try:
             await sync_to_async(run_turn, thread_sensitive=True)(
@@ -138,7 +147,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 message=body,
                 source="web",
                 directives=directives,
-                on_token=on_token,
+                on_event=on_event,
             )
         except asyncio.CancelledError:
             await self.send_json({"type": "system", "content": "Agent turn cancelled."})

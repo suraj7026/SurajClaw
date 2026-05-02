@@ -34,9 +34,9 @@ interface FeedItem {
 }
 
 const STATUS_LABEL: Record<DoctorStatus, string> = {
-  ok: "NOMINAL",
-  warn: "DEGRADED",
-  error: "CRITICAL",
+  ok: "All Systems Operational",
+  warn: "Degraded Performance",
+  error: "Critical Alert",
 };
 
 const STATUS_TONE: Record<DoctorStatus, "ok" | "warn" | "error"> = {
@@ -49,7 +49,6 @@ function checkIcon(name: string): string {
   if (name.includes("database")) return "database";
   if (name.includes("pgvector")) return "memory";
   if (name.includes("redis")) return "bolt";
-  if (name.includes("ollama")) return "smart_toy";
   if (name.includes("gemini")) return "auto_awesome";
   if (name.includes("celery") || name.includes("beat")) return "schedule";
   if (name.includes("owner") || name.includes("auth")) return "shield";
@@ -115,27 +114,50 @@ export default function Dashboard() {
   const subsystemChecks: DoctorCheck[] = doctor?.checks ?? [];
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+    <div className="p-6 max-w-[1600px] mx-auto">
       <PageHeader
-        title="Mission Control"
-        subtitle="Real-time operator overview of every SurajClaw subsystem."
-        icon="dashboard"
-        actions={
-          <div className="flex items-center gap-3">
-            <StatusIndicator
-              status={doctor ? STATUS_TONE[doctor.status] : "idle"}
-              label={
-                doctor ? `STATUS · ${STATUS_LABEL[doctor.status]}` : "AWAITING DOCTOR"
-              }
-            />
-            <span className="font-mono text-xs text-ink-mute hidden sm:inline">
-              {now.toISOString().slice(11, 19)} UTC
-            </span>
-          </div>
-        }
+        title="SURAJCLAW | Health & Observability"
+        subtitle="Global latency, traffic distribution, and live telemetry."
+        icon="monitoring"
       />
 
-      {/* Health banner */}
+      {/* Global Health Status Banner */}
+      <div className="mb-6 p-4 flex items-center justify-between border-l-4 border-tertiary bg-bg-surface rounded-lg">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <span className="block w-3 h-3 bg-tertiary rounded-full animate-pulse" />
+            <span className="absolute top-0 left-0 w-3 h-3 bg-tertiary rounded-full animate-ping" />
+          </div>
+          <div>
+            <p className="text-[10px] font-display text-ink-mute tracking-widest uppercase">
+              System Diagnosis
+            </p>
+            <h2 className="text-xl font-display font-bold text-tertiary">
+              {doctor ? STATUS_LABEL[doctor.status] : "Initializing..."}
+            </h2>
+          </div>
+        </div>
+        <div className="hidden sm:flex gap-8">
+          <div className="text-right">
+            <p className="text-[10px] font-display text-ink-mute uppercase tracking-widest">
+              Active Requests
+            </p>
+            <p className="text-primary font-display font-bold">
+              {formatNumber(metrics?.active_sessions ?? 0)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-display text-ink-mute uppercase tracking-widest">
+              UTC Time
+            </p>
+            <p className="text-primary font-display font-bold font-mono text-sm">
+              {now.toISOString().slice(11, 19)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <MetricCard
           label="Active Sessions"
@@ -172,7 +194,7 @@ export default function Dashboard() {
           hint={`${formatNumber(metrics?.total_tasks ?? 0)} tasks total`}
         />
         <MetricCard
-          label="Tokens · 24h"
+          label="Tokens 24h"
           value={formatNumber(metrics?.token_throughput ?? 0)}
           tone="primary"
           icon="bolt"
@@ -180,123 +202,155 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* 3-column grid */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* Subsystem matrix */}
-        <Panel
-          title="Subsystem Matrix"
-          subtitle="Self-check probes from /api/doctor"
-          icon="grid_view"
-          className="lg:col-span-2"
-        >
-          {subsystemChecks.length === 0 ? (
-            <EmptyState icon="hourglass_top" title="Doctor reporting…" />
-          ) : (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {subsystemChecks.map((c) => (
-                <li
-                  key={c.name}
-                  className="border border-border rounded-md p-3 bg-bg-base/40 hover:border-primary/40 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
+        <section className="md:col-span-4 lg:col-span-3 space-y-6">
+          <Panel title="Subsystem Matrix" icon="analytics">
+            {subsystemChecks.length === 0 ? (
+              <EmptyState icon="hourglass_top" title="Doctor reporting..." />
+            ) : (
+              <div className="space-y-3">
+                {subsystemChecks.map((c) => (
+                  <div
+                    key={c.name}
+                    className="flex items-center justify-between p-3 bg-bg-raised rounded"
+                  >
+                    <div className="flex items-center gap-2">
                       <span
                         className="material-symbols-outlined text-primary"
                         style={{ fontSize: "16px" }}
                       >
                         {checkIcon(c.name)}
                       </span>
-                      <span className="font-display text-xs uppercase tracking-wider truncate">
-                        {c.name.replace(/_/g, " ")}
-                      </span>
+                      <span className="text-xs font-display">{c.name.replace(/_/g, " ")}</span>
                     </div>
                     <StatusIndicator status={STATUS_TONE[c.status]} pulse={false} />
                   </div>
-                  <p className="text-[11px] text-ink-dim font-mono leading-relaxed line-clamp-2">
-                    {c.detail || "—"}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-
-        {/* Resource HUD */}
-        <Panel title="Resource HUD" icon="speed">
-          <div className="space-y-4">
-            <ProgressBar
-              label="Memory Density"
-              hint={`${formatNumber(metrics?.total_entities ?? 0)} entities`}
-              value={Math.min(
-                100,
-                ((metrics?.total_entities ?? 0) / 200) * 100,
-              )}
-              tone="primary"
-            />
-            <ProgressBar
-              label="Notes Indexed"
-              hint={`${formatNumber(metrics?.total_notes ?? 0)} notes`}
-              value={Math.min(100, ((metrics?.total_notes ?? 0) / 100) * 100)}
-              tone="tertiary"
-            />
-            <ProgressBar
-              label="Conversation Volume"
-              hint={`${formatNumber(metrics?.total_messages ?? 0)} messages`}
-              value={Math.min(
-                100,
-                ((metrics?.total_messages ?? 0) / 1000) * 100,
-              )}
-              tone="secondary"
-            />
-            <div className="border-t border-border pt-3">
-              <p className="label-mono mb-1">Last Dream Cycle</p>
-              <p className="text-xs text-ink-dim">
-                {metrics?.last_dream_at
-                  ? `${formatRelative(metrics.last_dream_at)} · ${formatDateTime(
-                      metrics.last_dream_at,
-                    )}`
-                  : "No consolidation runs recorded yet"}
-              </p>
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-        {/* Real-time feed */}
-        <Panel
-          title="State Stream"
-          subtitle="Recent agent activity"
-          icon="bolt"
-          className="lg:col-span-2"
-          bodyClassName="p-0"
-          actions={<StatusIndicator status="info" label="LIVE" />}
-        >
-          <div className="max-h-96 overflow-y-auto scroll-thin">
-            {feedItems.length === 0 ? (
-              <EmptyState
-                icon="radar"
-                title="No recent activity"
-                description="Tasks will stream in as the agent processes requests."
-              />
-            ) : (
-              <ul className="divide-y divide-border">
-                {feedItems.map((item) => (
-                  <li key={item.id} className="px-4 py-2 hover:bg-bg-raised/40">
-                    <LogEntry
-                      timestamp={item.ts}
-                      tag={item.tag}
-                      message={item.message}
-                      tone={item.tone}
-                    />
-                  </li>
                 ))}
-              </ul>
+              </div>
             )}
-          </div>
-        </Panel>
+          </Panel>
 
-        {/* Active sessions */}
-        <ActiveSessionsCard sessions={sessions} />
+          <Panel title="Resource Allocation" icon="speed">
+            <div className="space-y-4">
+              <ProgressBar
+                label="Memory Density"
+                hint={`${formatNumber(metrics?.total_entities ?? 0)} entities`}
+                value={Math.min(100, ((metrics?.total_entities ?? 0) / 200) * 100)}
+                tone="primary"
+              />
+              <ProgressBar
+                label="Notes Indexed"
+                hint={`${formatNumber(metrics?.total_notes ?? 0)} notes`}
+                value={Math.min(100, ((metrics?.total_notes ?? 0) / 100) * 100)}
+                tone="tertiary"
+              />
+              <ProgressBar
+                label="Conversation Volume"
+                hint={`${formatNumber(metrics?.total_messages ?? 0)} msgs`}
+                value={Math.min(100, ((metrics?.total_messages ?? 0) / 1000) * 100)}
+                tone="secondary"
+              />
+              <div className="border-t border-border pt-3">
+                <p className="label-mono mb-1">Last Dream Cycle</p>
+                <p className="text-xs text-ink-dim">
+                  {metrics?.last_dream_at
+                    ? `${formatRelative(metrics.last_dream_at)} · ${formatDateTime(metrics.last_dream_at)}`
+                    : "No consolidation runs recorded yet"}
+                </p>
+              </div>
+            </div>
+          </Panel>
+        </section>
+
+        {/* Real-time state stream */}
+        <section className="md:col-span-8 lg:col-span-6">
+          <Panel
+            title="Real Time State Stream"
+            icon="terminal"
+            bodyClassName="p-0"
+            className="h-full flex flex-col"
+            actions={
+              <span className="text-[10px] font-display text-tertiary bg-tertiary/10 px-2 py-0.5 rounded">
+                LIVE_FEED
+              </span>
+            }
+          >
+            <div className="flex-1 bg-bg-lowest p-4 font-mono text-sm space-y-2 overflow-y-auto max-h-[600px] scroll-thin">
+              {feedItems.length === 0 ? (
+                <EmptyState
+                  icon="radar"
+                  title="No recent activity"
+                  description="Tasks will stream in as the agent processes requests."
+                />
+              ) : (
+                feedItems.map((item) => (
+                  <LogEntry
+                    key={item.id}
+                    timestamp={item.ts}
+                    tag={item.tag}
+                    message={item.message}
+                    tone={item.tone}
+                  />
+                ))
+              )}
+            </div>
+            <div className="p-3 border-t border-border bg-bg-raised/50 flex items-center gap-3">
+              <span className="text-primary font-bold font-display text-xs uppercase">
+                CMD &gt;
+              </span>
+              <input
+                className="bg-transparent border-none focus:ring-0 text-xs w-full text-primary placeholder-primary/30 font-display"
+                placeholder="Awaiting direct operator override..."
+                type="text"
+                readOnly
+              />
+            </div>
+          </Panel>
+        </section>
+
+        {/* Right column */}
+        <section className="md:col-span-12 lg:col-span-3 space-y-6">
+          {/* Core Metrics */}
+          <Panel title="Core Metrics" icon="analytics" bodyClassName="p-0">
+            <div className="divide-y divide-border">
+              <div className="p-4">
+                <p className="text-[10px] font-display text-ink-mute uppercase mb-1">
+                  Token Throughput
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-display font-bold">
+                    {formatNumber(metrics?.token_throughput ?? 0)}
+                  </span>
+                  <span className="text-[10px] text-tertiary">/24h</span>
+                </div>
+              </div>
+              <div className="p-4">
+                <p className="text-[10px] font-display text-ink-mute uppercase mb-1">
+                  Success Rate
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-display font-bold">
+                    {formatPercent(metrics?.success_rate ?? 0, 1)}
+                  </span>
+                </div>
+              </div>
+              <div className="p-4">
+                <p className="text-[10px] font-display text-ink-mute uppercase mb-1">
+                  Total Tasks
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-display font-bold">
+                    {formatNumber(metrics?.total_tasks ?? 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Panel>
+
+          <ActiveSessionsCard sessions={sessions} />
+        </section>
       </div>
     </div>
   );
@@ -309,14 +363,11 @@ function ActiveSessionsCard({
 }) {
   return (
     <Panel
-      title="Active Sessions"
+      title="Active Session Map"
       icon="forum"
       actions={
-        <Link to="/chat" className="btn">
-          <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>
-            chat
-          </span>
-          New
+        <Link to="/chat" className="btn text-[10px]">
+          View All Active
         </Link>
       }
     >
@@ -327,29 +378,27 @@ function ActiveSessionsCard({
           description="Active conversations will appear here."
         />
       ) : (
-        <ul className="space-y-2">
+        <div className="space-y-3">
           {sessions.results.map((s) => (
-            <li
+            <div
               key={s.id}
-              className="border border-border rounded-md p-3 bg-bg-base/40"
+              className="flex items-center gap-3 p-2 hover:bg-bg-raised rounded transition-colors"
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="label-mono text-primary">{s.source}</span>
-                <span className="text-[10px] text-ink-mute font-mono">
-                  {formatRelative(s.started_at)}
+              <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                  person
                 </span>
               </div>
-              <p className="text-xs text-ink-dim line-clamp-2">
-                {s.summary || "No summary yet — conversation in progress."}
-              </p>
-              {s.message_count !== undefined && (
-                <p className="text-[10px] text-ink-mute mt-1 font-mono">
-                  {s.message_count} messages
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-display truncate">{s.source}</p>
+                <p className="text-[10px] text-ink-mute">
+                  {s.summary || "In progress..."}
                 </p>
-              )}
-            </li>
+              </div>
+              <span className="w-1.5 h-1.5 bg-tertiary rounded-full" />
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </Panel>
   );

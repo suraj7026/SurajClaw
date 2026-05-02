@@ -4,7 +4,7 @@
 > **Version:** 1.0  
 > **Date:** April 2026  
 > **Target Hardware:** Intel i5 9th Gen · 8 GB RAM · GTX 1650 · 512 GB Storage · Ubuntu Linux  
-> **Primary Model:** Gemma 4 E2B (local, Ollama) · Fallback: Gemini API  
+> **Model:** Gemini API (`gemini-3.1-flash-lite-preview`)  
 
 ---
 
@@ -21,7 +21,7 @@
 9. [Notes & Research Documents Feature](#9-notes--research-documents-feature)
 10. [Gmail Integration](#10-gmail-integration)
 11. [Web Search Integration](#11-web-search-integration)
-12. [Model Router (Local ↔ Cloud)](#12-model-router-local--cloud)
+12. [Model Runtime](#12-model-runtime)
 13. [API & WebChat Interface](#13-api--webchat-interface)
 14. [Data Storage & Persistence](#14-data-storage--persistence)
 15. [Configuration Reference](#15-configuration-reference)
@@ -37,8 +37,7 @@ This document describes a **personal AI assistant** — a self-hosted, single-us
 ### Core Goals
 
 - A persistent, always-on AI assistant accessible via a local web UI
-- Uses **Gemma 4 E2B** (via Ollama) as the primary model for fast, local, private inference
-- Escalates to **Gemini API** for complex reasoning tasks
+- Uses **Gemini API** for planning, orchestration, response generation, and embeddings
 - Full **Git workflow automation**: clone → branch → edit → hand off to OpenCode CLI → push
 - **Notes/research docs** creation with a recommended local app for reading
 - **Gmail read access** to process emails and convert them to tasks (integrating your `mailtotasks` project)
@@ -52,17 +51,16 @@ This document describes a **personal AI assistant** — a self-hosted, single-us
 | Resource | Spec | Implication |
 |---|---|---|
 | CPU | Intel i5 9th Gen (6-core) | Good for I/O-heavy orchestration; limit CPU-bound inference |
-| RAM | 8 GB | Gemma 4 E2B (2B params, ~1.5 GB VRAM) fits easily; limit concurrent agents to 2–3 |
-| GPU | GTX 1650 (4 GB VRAM) | Run Gemma 4 E2B via Ollama with CUDA; insufficient for larger models |
+| RAM | 8 GB | Keep concurrent agents limited to 2–3 |
+| GPU | GTX 1650 (4 GB VRAM) | Not required for the Gemini API runtime |
 | Storage | 512 GB | Ample for models, notes, conversation history, repos |
-| OS | Ubuntu Linux | Full support for Ollama, Docker, systemd services |
+| OS | Ubuntu Linux | Full support for Docker and systemd services |
 
 ### RAM Budget (Operating)
 
 | Component | Est. RAM |
 |---|---|
 | Ubuntu + system | ~1.5 GB |
-| Ollama + Gemma 4 E2B | ~2.0 GB |
 | FastAPI gateway | ~150 MB |
 | LangGraph agent process | ~300 MB |
 | ChromaDB (vector store) | ~200 MB |
@@ -74,7 +72,7 @@ This leaves ~3.75 GB headroom — comfortable for stable operation.
 ### Key Constraints
 
 - **No more than 2 LangGraph agent threads concurrently** to avoid OOM pressure
-- **Gemini API** used only for tasks explicitly flagged as "complex" — keeps local costs zero for everyday use
+- **Gemini API** is the only LLM runtime; monitor API usage and quotas
 - **GTX 1650 VRAM cap:** Do NOT attempt to run models larger than 3B parameters on-device
 
 ---
@@ -114,10 +112,10 @@ This leaves ~3.75 GB headroom — comfortable for stable operation.
           ┌───────────────────┼─────────────────────┐
           │                   │                      │
    ┌──────▼──────┐   ┌────────▼───────┐   ┌─────────▼──────┐
-   │   Ollama    │   │  Gemini API    │   │   ChromaDB      │
-   │  (local)    │   │  (cloud)       │   │  (vector DB)    │
-   │ Gemma 4 E2B │   │  gemini-pro    │   │  notes + mem    │
-   └─────────────┘   └────────────────┘   └────────────────┘
+   │  Gemini API    │   │   ChromaDB      │
+   │  (cloud)       │   │  (vector DB)    │
+   │ gemini-3.1...  │   │  notes + mem    │
+   └────────────────┘   └────────────────┘
 ```
 
 ---
@@ -130,7 +128,6 @@ This leaves ~3.75 GB headroom — comfortable for stable operation.
 |---|---|---|
 | `langgraph` | ≥0.2 | Agent graph orchestration |
 | `langchain` | ≥0.2 | LLM abstractions, tool wrappers |
-| `langchain-community` | latest | Ollama integration |
 | `langchain-google-genai` | latest | Gemini API integration |
 | `fastapi` | ≥0.110 | HTTP + WebSocket gateway |
 | `uvicorn` | latest | ASGI server |
@@ -156,7 +153,6 @@ This leaves ~3.75 GB headroom — comfortable for stable operation.
 
 | Tool | Purpose |
 |---|---|
-| Ollama | Run Gemma 4 E2B locally on CUDA |
 | systemd | Run gateway as a user service (always-on) |
 | Docker (optional) | Sandboxed bash execution |
 | OpenCode CLI | AI coding assistant (external) |
@@ -172,10 +168,10 @@ This leaves ~3.75 GB headroom — comfortable for stable operation.
 - Maintains per-session conversation history
 - Session commands: `/new`, `/reset`, `/compact`, `/model <name>`
 
-### F2 — Multi-Model Routing
-- **Primary**: Gemma 4 E2B via Ollama (local, fast, private)
-- **Complex tasks**: Gemini API (cloud, powerful)
-- Complexity detection: auto-route based on task type, or user-commanded via `/think hard`
+### F2 — Gemini Runtime
+- **Model**: Gemini API with `gemini-3.1-flash-lite-preview`
+- The same model is used for routine chat, planning, and complex tasks
+- Runtime directives can clear or reaffirm the Gemini model selection
 
 ### F3 — Git Workflow Automation
 - Clone a repository to a working directory
@@ -267,7 +263,7 @@ graph = builder.compile()
 
 ### SupervisorNode
 
-The supervisor uses a lightweight prompt with Gemma to classify intent:
+The supervisor uses a lightweight Gemini prompt to classify intent:
 
 ```python
 SUPERVISOR_PROMPT = """
@@ -285,19 +281,19 @@ Respond with ONLY one word from the list above.
 
 ### GeneralAgentNode
 
-Uses Gemma 4 E2B for everyday conversation with access to: `web_search`, `bash_exec`, `file_read`, `notes_write`.
+Uses Gemini for everyday conversation with access to: `web_search`, `bash_exec`, `file_read`, `notes_write`.
 
 ### GitAgentNode
 
-Uses Gemma 4 E2B with escalation to Gemini for complex diffs. Has access to: `git_clone`, `git_branch`, `git_status`, `git_add_commit_push`, `opencode_invoke`, `file_read`, `file_write`, `bash_exec`.
+Uses Gemini for code and Git workflow tasks. Has access to: `git_clone`, `git_branch`, `git_status`, `git_add_commit_push`, `opencode_invoke`, `file_read`, `file_write`, `bash_exec`.
 
 ### ResearchAgentNode
 
-Uses Gemma 4 E2B + ChromaDB retrieval. Has access to: `web_search`, `notes_write`, `notes_search`, `file_write`.
+Uses Gemini + ChromaDB retrieval. Has access to: `web_search`, `notes_write`, `notes_search`, `file_write`.
 
 ### EmailAgentNode
 
-Uses Gemma 4 E2B. Has access to: `gmail_list_unread`, `gmail_get_message`, `tasks_create`, `tasks_list`.
+Uses Gemini. Has access to: `gmail_list_unread`, `gmail_get_message`, `tasks_create`, `tasks_list`.
 
 ---
 
@@ -519,7 +515,7 @@ When the user says something like *"do some research on LangGraph memory managem
 ~/assistant/
 ├── notes/
 │   ├── langgraph_memory_management.md
-│   ├── gemma_4_benchmarks.md
+│   ├── gemini_runtime_notes.md
 │   └── ...
 ├── workspace/
 │   └── repos/
@@ -658,16 +654,14 @@ def web_search(query: str) -> str:
 
 ---
 
-## 12. Model Router (Local ↔ Cloud)
+## 12. Model Runtime
 
-The model router decides which LLM backend to use per request. This keeps 95%+ of usage local and private.
+The model runtime uses Gemini for every request.
 
 ```python
-from langchain_community.llms import Ollama
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-LOCAL_MODEL = Ollama(model="gemma4:2b", temperature=0.3)
-CLOUD_MODEL = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.3)
+MODEL = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0.3)
 
 COMPLEX_TASK_KEYWORDS = [
     "debug", "complex", "architecture", "explain in depth",
@@ -797,9 +791,8 @@ CREATE TABLE tasks (
 
 ```env
 # Models
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:2b
-GOOGLE_API_KEY=your_gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
 
 # Search
 GOOGLE_SEARCH_API_KEY=your_google_search_key
@@ -822,8 +815,7 @@ NOTES_DIR=/home/youruser/assistant/notes
 ```json
 {
   "models": {
-    "default": "ollama/gemma4:2b",
-    "complex": "gemini/gemini-1.5-pro"
+    "default": "gemini/gemini-3.1-flash-lite-preview"
   },
   "complexity_threshold": "auto",
   "max_concurrent_agents": 2,
@@ -850,7 +842,7 @@ NOTES_DIR=/home/youruser/assistant/notes
 
 ### Phase 1 — Core Foundation (Week 1–2)
 
-- [ ] Set up Ollama + pull Gemma 4 E2B model
+- [ ] Configure Gemini API key
 - [ ] Create FastAPI gateway skeleton
 - [ ] Build basic LangGraph graph with supervisor + general agent
 - [ ] Implement `web_search`, `file_read`, `file_write`, `bash_exec` tools
@@ -963,20 +955,11 @@ Your agent saves notes as plain **Markdown files** in `~/assistant/notes/`. You 
 └── requirements.txt
 ```
 
-## Appendix B — Ollama Setup Commands
+## Appendix B — Gemini Setup
 
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull Gemma 4 E2B (2B param model, ~1.5 GB)
-ollama pull gemma4:2b
-
-# Verify CUDA is being used
-ollama run gemma4:2b "ping" --verbose
-
-# Start Ollama service (usually starts automatically)
-ollama serve
+export GEMINI_API_KEY=your_gemini_api_key
+export GEMINI_MODEL=gemini-3.1-flash-lite-preview
 ```
 
 ## Appendix C — Key Limitations & Known Trade-offs

@@ -21,6 +21,14 @@ const TONES: Record<NonNullable<Props["tone"]>, string> = {
   neutral: "text-ink",
 };
 
+const BORDER_TONES: Record<NonNullable<Props["tone"]>, string> = {
+  primary: "border-l-primary",
+  secondary: "border-l-secondary",
+  tertiary: "border-l-tertiary",
+  danger: "border-l-danger",
+  neutral: "border-l-ink-mute",
+};
+
 const TREND_TONES = {
   up: "text-tertiary",
   down: "text-danger",
@@ -43,22 +51,27 @@ export function MetricCard({
   className,
 }: Props) {
   return (
-    <div className={cn("panel p-4 relative overflow-hidden", className)}>
+    <div
+      className={cn(
+        "panel p-4 border-l-2 relative overflow-hidden",
+        BORDER_TONES[tone],
+        className,
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <span className="label-mono">{label}</span>
+        <span className="text-[10px] font-display font-bold text-ink-mute uppercase tracking-widest">
+          {label}
+        </span>
         {icon && (
           <span
-            className={cn(
-              "material-symbols-outlined text-base opacity-60",
-              TONES[tone],
-            )}
-            style={{ fontSize: "18px" }}
+            className={cn("material-symbols-outlined opacity-60", TONES[tone])}
+            style={{ fontSize: "20px" }}
           >
             {icon}
           </span>
         )}
       </div>
-      <div className={cn("font-display text-3xl mt-2 tabular-nums", TONES[tone])}>
+      <div className={cn("font-display text-2xl font-bold mt-1 tabular-nums", TONES[tone])}>
         {value}
       </div>
       <div className="flex items-center justify-between mt-2 text-xs">
@@ -66,7 +79,7 @@ export function MetricCard({
         {trend && (
           <span
             className={cn(
-              "inline-flex items-center gap-1 label-mono",
+              "inline-flex items-center gap-1 text-[11px] font-bold",
               TREND_TONES[trend.direction],
             )}
           >

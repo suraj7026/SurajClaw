@@ -33,6 +33,8 @@ urlpatterns = [
     # ---- public ----------------------------------------------------------
     path("health/", views.health, name="api-health"),
     path("doctor/", doctor.doctor_view, name="api-doctor"),
+    path("agents/", views.list_agents, name="api-agents-list"),
+    path("agents/<str:agent_id>/invoke/", views.invoke_agent, name="api-agents-invoke"),
 
     # ---- auth ------------------------------------------------------------
     path("auth/login/", auth.login_view, name="api-auth-login"),

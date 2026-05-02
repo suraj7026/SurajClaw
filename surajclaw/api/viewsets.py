@@ -273,7 +273,7 @@ def metrics_view(_request: Request) -> Response:
 def similarity_search_view(request: Request) -> Response:
     """Run a pgvector cosine-distance lookup against the chosen target store.
 
-    Embedding generation can be slow (Ollama call); the timeout in
+    Embedding generation can be slow; the timeout in
     ``memory.services.embed_text`` already protects us from hanging
     forever. On failure, returns an empty hits list rather than 500.
     """

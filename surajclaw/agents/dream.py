@@ -1,12 +1,12 @@
-"""Dream consolidation node.
+"""Dream consolidation worker.
 
-Runs in a sandboxed LangGraph with narrowed permissions:
-- Read: Session, Message, Entity, NoteIndex, DreamLog
-- Write: Entity (merge/prune), NoteIndex (upsert), DreamLog, SystemState
+Offline memory-maintenance task triggered by the Celery beat schedule. Not
+part of the chat agent loop and not a LangGraph node — it just consolidates
+``Entity`` rows, prunes stale memory, and (in future) re-embeds updated notes.
 
-Does NOT have access to any external tools (no email, no git, no shell).
-That constraint is enforced here by construction: we only call memory
-services and Django ORM, never the full tool registry.
+Constraints enforced by construction: this module only touches memory
+services and Django ORM. It must never reach into the live tool registry,
+agents, or external APIs.
 """
 from __future__ import annotations
 

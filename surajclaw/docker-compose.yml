@@ -3,10 +3,7 @@
 # Intentional choices:
 #   - `pgvector/pgvector:pg16` pre-ships the vector extension so migrations
 #     `CREATE EXTENSION IF NOT EXISTS vector` just work.
-#   - Redis handles both Celery broker + Django Channels layer.
-#   - Ollama is NOT in this compose on purpose; it usually runs directly on
-#     the host so the GPU is accessible. If you want a sidecar Ollama,
-#     uncomment the `ollama` service below.
+#   - Postgres handles Django data, pgvector memory, Celery broker, and results.
 #   - Nginx is expected on the host (systemd-managed), not in this compose.
 
 services:
@@ -31,20 +28,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - surajclaw_redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
   web:
     build: .
     restart: unless-stopped
@@ -57,13 +40,10 @@ services:
       # Flip to config.settings.production via your .env when you put nginx
       # in front and have a real DJANGO_SECRET_KEY + ALLOWED_HOSTS.
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
+      POSTGRES_HOST: db
       # POSTGRES_HOST=db in .env points at the compose Postgres. Override in
       # .env to use a remote Postgres (which must have the `vector` extension).
-      REDIS_HOST: redis
-      # Inside the container, "127.0.0.1" is the container itself, not the host.
-      # Point Ollama at host.docker.internal so the host-installed Ollama (with
-      # GPU access) is reachable. Override in .env if you run Ollama elsewhere.
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+      CELERY_RESULT_BACKEND: django-db
     env_file:
       - ../.env
     ports:
@@ -72,13 +52,7 @@ services:
       - ./:/app
       - surajclaw_staticfiles:/app/staticfiles
       - surajclaw_notes:/app/notes
-    extra_hosts:
-      # Lets the container hit Ollama running on the host (Linux + macOS).
-      # On macOS this is automatic; on Linux it needs this explicit mapping.
-      - "host.docker.internal:host-gateway"
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
 
@@ -88,18 +62,14 @@ services:
     command: celery -A config worker -l info --concurrency=2
     environment:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
-      REDIS_HOST: redis
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+      POSTGRES_HOST: db
+      CELERY_RESULT_BACKEND: django-db
     env_file:
       - ../.env
     volumes:
       - ./:/app
       - surajclaw_notes:/app/notes
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
 
@@ -109,14 +79,13 @@ services:
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     environment:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.development}
-      REDIS_HOST: redis
+      POSTGRES_HOST: db
+      CELERY_RESULT_BACKEND: django-db
     env_file:
       - ../.env
     volumes:
       - ./:/app
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
 
@@ -147,26 +116,8 @@ services:
     depends_on:
       - web
 
-  # Uncomment to run Ollama in-compose. Typically you'll instead install
-  # Ollama on the host so it can see the GPU (/dev/nvidia*).
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   restart: unless-stopped
-  #   ports:
-  #     - "127.0.0.1:11434:11434"
-  #   volumes:
-  #     - surajclaw_ollama:/root/.ollama
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             capabilities: ["gpu"]
-
 volumes:
   surajclaw_pgdata:
-  surajclaw_redisdata:
   surajclaw_staticfiles:
   surajclaw_notes:
   surajclaw_ui_node_modules:
-  # surajclaw_ollama:

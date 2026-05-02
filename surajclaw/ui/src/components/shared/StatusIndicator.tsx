@@ -9,12 +9,20 @@ interface Props {
   pulse?: boolean;
 }
 
-const COLORS: Record<StatusKind, string> = {
-  ok: "bg-tertiary shadow-[0_0_8px_rgba(184,255,187,0.6)]",
-  warn: "bg-secondary shadow-[0_0_8px_rgba(255,191,0,0.6)]",
-  error: "bg-danger shadow-[0_0_8px_rgba(255,107,107,0.6)]",
+const DOT_COLORS: Record<StatusKind, string> = {
+  ok: "bg-tertiary",
+  warn: "bg-secondary",
+  error: "bg-danger",
   idle: "bg-ink-mute",
-  info: "bg-primary shadow-[0_0_8px_rgba(129,236,255,0.6)]",
+  info: "bg-primary",
+};
+
+const GLOW_COLORS: Record<StatusKind, string> = {
+  ok: "shadow-[0_0_8px_var(--tertiary-glow)]",
+  warn: "shadow-[0_0_8px_var(--secondary-glow)]",
+  error: "shadow-[0_0_8px_var(--danger-glow)]",
+  idle: "",
+  info: "shadow-[0_0_8px_var(--primary-glow)]",
 };
 
 const TEXT_COLORS: Record<StatusKind, string> = {
@@ -31,12 +39,15 @@ export function StatusIndicator({ status, label, className, pulse = true }: Prop
       <span
         className={cn(
           "h-2 w-2 rounded-full",
-          COLORS[status],
+          DOT_COLORS[status],
+          status !== "idle" && GLOW_COLORS[status],
           pulse && status !== "idle" && "animate-pulseDot",
         )}
       />
       {label !== undefined && (
-        <span className={cn("label-mono", TEXT_COLORS[status])}>{label}</span>
+        <span className={cn("text-[10px] font-display font-bold uppercase tracking-widest", TEXT_COLORS[status])}>
+          {label}
+        </span>
       )}
     </span>
   );

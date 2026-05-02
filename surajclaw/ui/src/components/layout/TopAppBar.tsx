@@ -35,23 +35,53 @@ export function TopAppBar() {
     .toUpperCase();
 
   return (
-    <header className="h-14 shrink-0 border-b border-border bg-bg-surface/80 backdrop-blur flex items-center px-4 gap-4 z-20">
+    <header
+      className="h-16 shrink-0 flex items-center justify-between px-6 z-20"
+      style={{
+        background: "var(--header-bg)",
+        boxShadow: "var(--header-shadow)",
+      }}
+    >
+      {/* Mobile brand */}
       <div className="md:hidden flex items-center gap-2">
-        <span className="font-display text-sm tracking-wider text-primary">
+        <span className="text-xl font-bold tracking-tighter text-primary font-display">
           SURAJCLAW
         </span>
       </div>
-      <div className="flex-1 hidden md:flex items-center gap-6 text-xs">
+
+      {/* Desktop brand + status */}
+      <div className="hidden md:flex items-center gap-4">
+        <span className="text-xl font-bold tracking-tighter text-primary font-display">
+          SURAJCLAW
+        </span>
+      </div>
+
+      {/* Desktop nav links */}
+      <nav className="hidden md:flex items-center gap-6 font-display tracking-wider uppercase text-sm">
         <div className="flex items-center gap-2">
           <StatusIndicator status={statusKindFor(doctor?.status)} />
-          <span className="label-mono">
-            {doctor?.status ? `SYSTEM ${doctor.status.toUpperCase()}` : "BOOTING"}
+          <span className="text-ink-dim text-xs">
+            {doctor?.status ? `SYSTEM_${doctor.status.toUpperCase()}` : "BOOTING"}
           </span>
         </div>
-        <span className="font-mono text-ink-mute">|</span>
-        <span className="font-mono text-ink-dim">{stamp}</span>
-      </div>
-      <div className="flex items-center gap-3">
+        <span className="text-ink-mute">|</span>
+        <span className="font-mono text-ink-dim text-xs">{stamp}</span>
+      </nav>
+
+      {/* Right section */}
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          className="text-ink-mute hover:text-primary transition-colors"
+        >
+          <span className="material-symbols-outlined">notifications</span>
+        </button>
+        <button
+          type="button"
+          className="text-ink-mute hover:text-primary transition-colors"
+        >
+          <span className="material-symbols-outlined">settings</span>
+        </button>
         {user && (
           <span className="hidden sm:inline-flex items-center gap-2 text-xs text-ink-dim">
             <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
@@ -63,7 +93,7 @@ export function TopAppBar() {
         <button
           type="button"
           onClick={() => void logout()}
-          className="btn"
+          className="btn text-xs"
           title="Sign out"
         >
           <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>

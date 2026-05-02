@@ -31,6 +31,11 @@ GATED_TOOLS: set[str] = {
     "shell_exec",
     "fs_write",
     "fs_delete",
+    "google.calendar.delete_event",
+    "google.tasks.delete_task",
+    "google.drive.delete_file",
+    "google.docs.delete_doc",
+    "google.sheets.delete_sheet",
 }
 
 
@@ -42,21 +47,13 @@ class ApprovalOutcome:
 
 
 def _notify(approval_id: str, description: str, session_id: str) -> None:
-    """Push approval prompt to the session's WebSocket group (best-effort)."""
+    """Push approval prompt to the active WebSocket connection (best-effort)."""
     try:
-        from asgiref.sync import async_to_sync
-        from channels.layers import get_channel_layer
+        from chat.streaming import notify_session
 
-        layer = get_channel_layer()
-        if layer is None:
-            return
-        async_to_sync(layer.group_send)(
-            f"chat.{session_id}",
-            {
-                "type": "chat.approval",
-                "request_id": approval_id,
-                "description": description,
-            },
+        notify_session(
+            session_id,
+            {"type": "approval", "request_id": approval_id, "description": description},
         )
     except (ImportError, RuntimeError) as exc:
         logger.warning("approval notify failed: %s", exc)

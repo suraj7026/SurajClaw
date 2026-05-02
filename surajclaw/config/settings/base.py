@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
@@ -43,6 +44,7 @@ THIRD_PARTY_APPS = [
     "django_filters",
     "channels",
     "django_celery_beat",
+    "django_celery_results",
     "pgvector.django",
 ]
 
@@ -136,26 +138,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 # ---------------------------------------------------------------------------
-# Channels (WebSockets) + Redis
-# ---------------------------------------------------------------------------
-REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
-REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
-REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
-
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [(REDIS_HOST, REDIS_PORT)],
-        },
-    },
-}
-
-# ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
+def _postgres_celery_broker_url() -> str:
+    db = DATABASES["default"]
+    user = quote(str(db["USER"]))
+    password = quote(str(db["PASSWORD"]))
+    host = db["HOST"]
+    port = db["PORT"]
+    name = quote(str(db["NAME"]))
+    auth = f"{user}:{password}@" if password else f"{user}@"
+    return f"sqla+postgresql+psycopg://{auth}{host}:{port}/{name}"
+
+
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL") or _postgres_celery_broker_url()
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or "django-db"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -187,12 +184,11 @@ REST_FRAMEWORK = {
 # ---------------------------------------------------------------------------
 # Agent / LLM configuration
 # ---------------------------------------------------------------------------
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e2b")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
+AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "12"))
 
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-2-preview")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 
 # ---------------------------------------------------------------------------
@@ -223,6 +219,18 @@ GOOGLE_TOKEN_DIR = os.environ.get(
 )
 GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY", "")
 GOOGLE_SEARCH_CX = os.environ.get("GOOGLE_SEARCH_CX", "")
+
+# ---------------------------------------------------------------------------
+# Sandbox execution
+# ---------------------------------------------------------------------------
+SANDBOX_MODE = os.environ.get("SANDBOX_MODE", "all")
+SANDBOX_BACKEND = os.environ.get("SANDBOX_BACKEND", "docker")
+SANDBOX_SCOPE = os.environ.get("SANDBOX_SCOPE", "session")
+SANDBOX_WORKSPACE_ACCESS = os.environ.get("SANDBOX_WORKSPACE_ACCESS", "read_write")
+SANDBOX_IMAGE = os.environ.get("SANDBOX_IMAGE", "surajclaw-sandbox:bookworm-slim")
+SANDBOX_TIMEOUT_SECONDS = int(os.environ.get("SANDBOX_TIMEOUT_SECONDS", "30"))
+SANDBOX_MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "512m")
+SANDBOX_CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "1")
 
 # Where to bounce the operator after a Google OAuth web flow finishes. The
 # `/integrations` page on the React UI reads `?google=ok&label=...` to show

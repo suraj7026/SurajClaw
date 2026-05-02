@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 # doesn't get eaten.
 _DIRECTIVE_RE = re.compile(r"^!([a-zA-Z][\w-]*)[ \t]+([^\n]+)(?:\n|$)")
 
-ALLOWED_MODELS = frozenset({"gemini", "gemma", "ollama", "auto"})
+ALLOWED_MODELS = frozenset({"gemini", "auto"})
 ALLOWED_THINKING = frozenset({"low", "medium", "high"})
 
 

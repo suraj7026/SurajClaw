@@ -21,8 +21,8 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     proxy: {
-      "/api": { target: PROXY_TARGET, changeOrigin: true },
-      "/ws": { target: WS_TARGET, ws: true, changeOrigin: true },
+      "/api": { target: PROXY_TARGET, changeOrigin: false },
+      "/ws": { target: WS_TARGET, ws: true, changeOrigin: false },
       "/admin": PROXY_TARGET,
       "/static": PROXY_TARGET,
     },

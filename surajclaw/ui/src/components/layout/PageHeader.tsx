@@ -12,25 +12,25 @@ export function PageHeader({ title, subtitle, icon, actions, className }: Props)
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6",
+        "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6",
         className,
       )}
     >
       <div className="flex items-center gap-3">
         {icon && (
           <span
-            className="material-symbols-outlined text-primary border border-border rounded-lg p-2 bg-bg-surface"
-            style={{ fontSize: "22px" }}
+            className="material-symbols-outlined text-primary"
+            style={{ fontSize: "28px" }}
           >
             {icon}
           </span>
         )}
         <div>
-          <h1 className="font-display text-xl sm:text-2xl tracking-wide uppercase">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-xs sm:text-sm text-ink-dim mt-0.5">{subtitle}</p>
+            <p className="text-sm text-ink-dim mt-0.5">{subtitle}</p>
           )}
         </div>
       </div>

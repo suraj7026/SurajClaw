@@ -19,6 +19,7 @@ import type {
   Task,
   User,
   UUID,
+  AgentInfo,
 } from "@/types/api";
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,7 @@ export const systemApi = {
   metrics: () => api.get<Metrics>("/api/metrics/"),
   systemState: () =>
     api.get<PaginatedResponse<SystemStateItem>>("/api/system-state/"),
+  agents: () => api.get<{ agents: AgentInfo[] }>("/api/agents/"),
 };
 
 // ---------------------------------------------------------------------------

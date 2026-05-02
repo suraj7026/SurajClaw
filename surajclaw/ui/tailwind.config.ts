@@ -1,67 +1,67 @@
 import type { Config } from "tailwindcss";
 
-// Cyberpunk operator dashboard tokens. Mirrors the HTML mockups so designs
-// translate 1:1: cyan primary, amber secondary, lime tertiary, near-black
-// surfaces, tight radii, monoscape-y feel.
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",
   theme: {
     extend: {
       colors: {
-        // Surfaces — graduated darks, slight cyan tint to match the mockups.
+        // Background surfaces — `bg-bg-base`, `bg-bg-surface`, …
         bg: {
-          base: "#0a0f13",
-          surface: "#0f1620",
-          raised: "#141d29",
-          overlay: "#1b2735",
+          base: "rgb(var(--bg-base) / <alpha-value>)",
+          surface: "rgb(var(--bg-surface) / <alpha-value>)",
+          raised: "rgb(var(--bg-raised) / <alpha-value>)",
+          overlay: "rgb(var(--bg-overlay) / <alpha-value>)",
+          lowest: "rgb(var(--bg-lowest) / <alpha-value>)",
         },
-        // Borders — subtle cyan-grey lines used between panels and cards.
-        border: {
-          DEFAULT: "rgba(129, 236, 255, 0.12)",
-          strong: "rgba(129, 236, 255, 0.24)",
-        },
-        // Text scale.
+
+        // Ink (text) ramp — `text-ink`, `text-ink-dim`, `text-ink-mute`.
         ink: {
-          DEFAULT: "#e6f1ff",
-          dim: "#9aa9bd",
-          mute: "#5a6878",
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          dim: "rgb(var(--ink-dim) / <alpha-value>)",
+          mute: "rgb(var(--ink-mute) / <alpha-value>)",
         },
-        // Brand / status colors from the mockups.
+
+        border: {
+          DEFAULT: "rgb(var(--border) / <alpha-value>)",
+        },
+
         primary: {
-          DEFAULT: "#81ecff", // cyan
-          glow: "rgba(129, 236, 255, 0.35)",
-          dark: "#0a3a45",
+          DEFAULT: "rgb(var(--primary) / <alpha-value>)",
+          container: "rgb(var(--primary-container) / <alpha-value>)",
         },
         secondary: {
-          DEFAULT: "#ffbf00", // amber
-          glow: "rgba(255, 191, 0, 0.30)",
+          DEFAULT: "rgb(var(--secondary) / <alpha-value>)",
         },
         tertiary: {
-          DEFAULT: "#b8ffbb", // lime
-          glow: "rgba(184, 255, 187, 0.28)",
+          DEFAULT: "rgb(var(--tertiary) / <alpha-value>)",
         },
         danger: {
-          DEFAULT: "#ff6b6b",
-          glow: "rgba(255, 107, 107, 0.28)",
+          DEFAULT: "rgb(var(--danger) / <alpha-value>)",
         },
       },
       fontFamily: {
-        // Display = Space Grotesk for headings/labels, body = Inter, mono =
-        // JetBrains Mono for log lines / code-like data.
-        display: ["'Space Grotesk'", "system-ui", "sans-serif"],
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+        display: ["'Manrope'", "system-ui", "sans-serif"],
+        headline: ["'EB Garamond'", "serif"],
+        body: ["Manrope", "system-ui", "sans-serif"],
+        sans: ["Manrope", "system-ui", "sans-serif"],
+        mono: [
+          "'JetBrains Mono'",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace",
+        ],
       },
       borderRadius: {
-        DEFAULT: "0.125rem",
-        md: "0.1875rem",
-        lg: "0.25rem",
-        xl: "0.375rem",
+        DEFAULT: "0.25rem",
+        md: "0.375rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        "2xl": "1rem",
       },
       boxShadow: {
-        glow: "0 0 18px rgba(129, 236, 255, 0.18)",
-        "glow-strong": "0 0 28px rgba(129, 236, 255, 0.45)",
+        sahara: "0 2px 16px rgba(58, 48, 42, 0.04)",
       },
       keyframes: {
         pulseDot: {
@@ -72,10 +72,15 @@ export default {
           "0%": { transform: "translateY(-100%)" },
           "100%": { transform: "translateY(100%)" },
         },
+        pulseRing: {
+          "0%": { transform: "scale(1)", opacity: "0.4" },
+          "100%": { transform: "scale(3)", opacity: "0" },
+        },
       },
       animation: {
         pulseDot: "pulseDot 1.4s ease-in-out infinite",
         scan: "scan 2.6s linear infinite",
+        pulseRing: "pulseRing 2s infinite ease-in-out",
       },
     },
   },

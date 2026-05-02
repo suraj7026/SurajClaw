@@ -1,53 +1,67 @@
-"""Main LangGraph pipeline: planner -> router -> executor -> reflector -> responder.
+"""Main agent turn entrypoint.
 
-`run_turn(session_id, message, source)` is the single entrypoint called
-by both the Celery WebSocket handler and the Telegram webhook task.
+`run_turn(session_id, message, source)` persists the user message, invokes the
+general-agent supervisor, persists the assistant response, and streams response
+chunks through an optional direct callback.
 """
 from __future__ import annotations
 
+import inspect
 import logging
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
 from agents.state import AgentState
 
 logger = logging.getLogger(__name__)
 
+TokenCallback = Callable[[str], Awaitable[None] | None]
 
-def _send_token(session_id: str, token: str) -> None:
-    """Stream a token back to the web UI via the session's channel group."""
+
+async def _await_result(awaitable):
+    return await awaitable
+
+
+def _emit_token(callback: TokenCallback | None, token: str) -> None:
+    if callback is None or not token:
+        return
     try:
-        layer = get_channel_layer()
-        if layer is None:
-            return
-        async_to_sync(layer.group_send)(
-            f"chat.{session_id}",
-            {"type": "chat.token", "content": token},
-        )
-    except (ImportError, RuntimeError) as exc:
-        logger.debug("_send_token failed: %s", exc)
+        result = callback(token)
+        if inspect.isawaitable(result):
+            async_to_sync(_await_result)(result)
+    except Exception as exc:  # noqa: BLE001 -- streaming should not break persistence
+        logger.debug("token callback failed: %s", exc)
 
 
-def _send_done(session_id: str) -> None:
+def _session_pk(session_id: str) -> uuid.UUID:
     try:
-        layer = get_channel_layer()
-        if layer is None:
-            return
-        async_to_sync(layer.group_send)(
-            f"chat.{session_id}",
-            {"type": "chat.done"},
-        )
-    except (ImportError, RuntimeError) as exc:
-        logger.debug("_send_done failed: %s", exc)
+        return uuid.UUID(str(session_id))
+    except ValueError:
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"surajclaw:{session_id}")
 
 
-def _persist(session_id: str, role: str, content: str, model_used: str | None = None) -> None:
+def _source_value(source: str) -> str:
+    from core.models import Message, Session
+
+    values = {choice.value for choice in Session.Source}
+    return source if source in values else Session.Source.WEB
+
+
+def _persist(
+    session_id: str,
+    role: str,
+    content: str,
+    source: str = "web",
+    model_used: str | None = None,
+) -> None:
     from core.models import Message, Session
 
     session, _ = Session.objects.get_or_create(
-        id=session_id,
-        defaults={"source": Session.Source.WEB},
+        id=_session_pk(session_id),
+        defaults={"source": _source_value(source)},
     )
     Message.objects.create(
         session=session,
@@ -58,41 +72,10 @@ def _persist(session_id: str, role: str, content: str, model_used: str | None = 
 
 
 def build_graph():
-    """Construct and compile the LangGraph StateGraph.
+    """Construct the main graph-of-graphs orchestrator."""
+    from agents.orchestrator import build_orchestrator_graph
 
-    Nodes live in `agents/nodes/` and are imported lazily so a minimal
-    deployment (no Gemini, no tools) doesn't need all node dependencies.
-    """
-    from langgraph.graph import END, StateGraph
-
-    from agents.nodes.executor import executor_node
-    from agents.nodes.planner import planner_node
-    from agents.nodes.reflector import reflector_node
-    from agents.nodes.responder import responder_node
-    from agents.nodes.router import router_node
-
-    graph = StateGraph(AgentState)
-    graph.add_node("planner", planner_node)
-    graph.add_node("router", router_node)
-    graph.add_node("executor", executor_node)
-    graph.add_node("reflector", reflector_node)
-    graph.add_node("responder", responder_node)
-
-    graph.set_entry_point("planner")
-    graph.add_edge("planner", "router")
-    graph.add_edge("router", "executor")
-    graph.add_edge("executor", "reflector")
-
-    # Reflector decides whether we're done or need another pass.
-    def _after_reflector(state: AgentState) -> str:
-        if state.get("current_step", 0) < len(state.get("plan", [])):
-            return "router"
-        return "responder"
-
-    graph.add_conditional_edges("reflector", _after_reflector)
-    graph.add_edge("responder", END)
-
-    return graph.compile()
+    return build_orchestrator_graph()
 
 
 _compiled = None
@@ -110,16 +93,20 @@ def run_turn(
     message: str,
     source: str = "web",
     directives: dict | None = None,
+    on_token: TokenCallback | None = None,
 ) -> str:
-    """Execute one agent turn and stream tokens back via Channels.
+    """Execute one agent turn and stream chunks through ``on_token``.
 
     ``directives`` carries per-turn overrides parsed from inline ``!key value``
-    syntax. Stored on the LangGraph state so any node (router, executor) can
-    consult them.
+    syntax. Stored on the LangGraph state so agents and tools can
+    consult them. ``directives["agent"]`` (if set) directly invokes a
+    specific agent; otherwise the General Agent supervisor is invoked.
 
     Returns the final response text (also persisted as a Message row).
     """
-    _persist(session_id, role="user", content=message)
+    _persist(session_id, role="user", content=message, source=source)
+    model_used: str | None = None
+    final = ""
 
     try:
         graph = _get_graph()
@@ -127,24 +114,56 @@ def run_turn(
             "session_id": session_id,
             "source": source,
             "user_message": message,
-            "plan": [],
-            "current_step": 0,
+            "requested_agent": (directives or {}).get("agent"),
             "tool_calls": [],
             "tool_results": [],
+            "agent_results": [],
+            "agent_trace": [],
             "context": {"directives": directives or {}},
             "messages": [],
+            "agent_messages": [],
+            "step_count": 0,
+            "done": False,
         }
         state = graph.invoke(initial)
-        final = state.get("final_response", "")
-    except (ImportError, RuntimeError, ValueError) as exc:
-        # Defensive: don't let agent errors crash the Celery worker. Log,
-        # persist the error as an assistant message, and return.
+        final = state.get("final_response", "") or ""
+        model_used = state.get("model_used")
+    except Exception as exc:  # noqa: BLE001 -- agent errors must not kill the WS turn
         logger.exception("agent turn failed")
         final = f"[agent error: {exc}]"
 
-    for chunk in final.split(" "):
-        _send_token(session_id, chunk + " ")
-    _send_done(session_id)
+    if final:
+        _stream_text(on_token, final)
 
-    _persist(session_id, role="assistant", content=final, model_used="router")
+    _persist(
+        session_id,
+        role="assistant",
+        content=final,
+        source=source,
+        model_used=model_used or "unknown",
+    )
     return final
+
+
+def _stream_text(on_token: TokenCallback | None, text: str, chunk_size: int = 24) -> None:
+    """Emit ``text`` to the client in roughly word-aligned chunks.
+
+    LangGraph's prebuilt ReAct agent doesn't expose mid-turn token deltas
+    cleanly through its sync invoke path, so we stream the assembled final
+    response in small chunks. This keeps the UI responsive without requiring
+    a second pass through ``astream_events``.
+    """
+    if not on_token or not text:
+        return
+    buffer: list[str] = []
+    size = 0
+    for word in text.split(" "):
+        piece = (word + " ") if buffer or word else word
+        buffer.append(piece)
+        size += len(piece)
+        if size >= chunk_size:
+            _emit_token(on_token, "".join(buffer))
+            buffer = []
+            size = 0
+    if buffer:
+        _emit_token(on_token, "".join(buffer))

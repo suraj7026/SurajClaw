@@ -13,7 +13,6 @@ Used by:
 from __future__ import annotations
 
 import logging
-import socket
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
@@ -71,34 +70,18 @@ def check_pgvector() -> CheckResult:
     return CheckResult("pgvector", "ok", "extension enabled")
 
 
-def check_redis() -> CheckResult:
+def check_celery_storage() -> CheckResult:
     try:
-        import redis  # type: ignore[import-not-found]
+        from django_celery_results.models import TaskResult  # type: ignore[import-not-found]
 
-        client = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            socket_connect_timeout=1.5,
-        )
-        client.ping()
+        TaskResult.objects.order_by("-date_done").values("task_id").first()
     except Exception as exc:  # noqa: BLE001
-        return CheckResult("redis", "error", f"ping failed: {exc}")
-    return CheckResult("redis", "ok", f"{settings.REDIS_HOST}:{settings.REDIS_PORT}")
-
-
-def check_ollama() -> CheckResult:
-    try:
-        import urllib.request
-
-        url = settings.OLLAMA_BASE_URL.rstrip("/") + "/api/tags"
-        with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310 -- internal URL
-            if resp.status != 200:
-                return CheckResult(
-                    "ollama", "error", f"HTTP {resp.status} from {url}"
-                )
-    except (TimeoutError, OSError, socket.timeout, ValueError) as exc:
-        return CheckResult("ollama", "warn", f"unreachable: {exc}")
-    return CheckResult("ollama", "ok", f"reachable at {settings.OLLAMA_BASE_URL}")
+        return CheckResult("celery_storage", "error", f"Postgres Celery tables unavailable: {exc}")
+    return CheckResult(
+        "celery_storage",
+        "ok",
+        f"broker={settings.CELERY_BROKER_URL.split('://', 1)[0]}://..., result_backend={settings.CELERY_RESULT_BACKEND}",
+    )
 
 
 def check_gemini_key() -> CheckResult:
@@ -187,8 +170,7 @@ def check_workspace_writable() -> CheckResult:
 CHECKS = (
     check_database,
     check_pgvector,
-    check_redis,
-    check_ollama,
+    check_celery_storage,
     check_gemini_key,
     check_celery_beat,
     check_owner_configured,

@@ -21,9 +21,7 @@ def embed_text(text: str) -> list[float]:
     """Generate an embedding for ``text``.
 
     Provider routing:
-      * Model name starts with ``gemini-`` or ``models/`` -> Google AI
-        ``embedContent`` endpoint (uses GEMINI_API_KEY).
-      * Anything else -> Ollama at OLLAMA_BASE_URL (e.g. ``nomic-embed-text``).
+      * Google AI ``embedContent`` endpoint (uses GEMINI_API_KEY).
 
     Falls back to a zero-vector on failure so retrieval degrades gracefully
     rather than crashing the agent pipeline.
@@ -31,11 +29,8 @@ def embed_text(text: str) -> list[float]:
     model = (settings.EMBEDDING_MODEL or "").strip()
     dims = settings.EMBEDDING_DIMENSIONS
     try:
-        if model.startswith("gemini-") or model.startswith("models/"):
-            vec = _embed_gemini(text, model, dims)
-        else:
-            vec = _embed_ollama(text, model)
-    except Exception as exc:  # noqa: BLE001 -- never crash the planner on embeddings
+        vec = _embed_gemini(text, model, dims)
+    except Exception as exc:  # noqa: BLE001 -- never crash agent turns on embeddings
         logger.warning("embed_text(%s) failed: %s", model, exc)
         return [0.0] * dims
 
@@ -48,13 +43,8 @@ def embed_text(text: str) -> list[float]:
     return vec
 
 
-def _embed_ollama(text: str, model: str) -> list[float]:
-    import httpx
-
-    url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embeddings"
-    resp = httpx.post(url, json={"model": model, "prompt": text}, timeout=30.0)
-    resp.raise_for_status()
-    return resp.json().get("embedding") or []
+def _is_zero_vector(vec: Sequence[float]) -> bool:
+    return not vec or all(abs(value) < 1e-12 for value in vec)
 
 
 def _embed_gemini(text: str, model: str, dims: int) -> list[float]:
@@ -93,6 +83,8 @@ def _embed_gemini(text: str, model: str, dims: int) -> list[float]:
 def semantic_search_notes(query: str, limit: int = 5) -> Sequence[NoteIndex]:
     """Return the `limit` notes closest to `query` by cosine distance."""
     vec = embed_text(query)
+    if _is_zero_vector(vec):
+        return []
     return list(
         NoteIndex.objects.annotate(distance=CosineDistance("embedding", vec))
         .order_by("distance")[:limit]
@@ -101,6 +93,8 @@ def semantic_search_notes(query: str, limit: int = 5) -> Sequence[NoteIndex]:
 
 def semantic_search_sessions(query: str, limit: int = 5) -> Sequence[SessionEmbedding]:
     vec = embed_text(query)
+    if _is_zero_vector(vec):
+        return []
     return list(
         SessionEmbedding.objects.annotate(distance=CosineDistance("embedding", vec))
         .order_by("distance")[:limit]
@@ -109,6 +103,8 @@ def semantic_search_sessions(query: str, limit: int = 5) -> Sequence[SessionEmbe
 
 def semantic_search_entities(query: str, limit: int = 5) -> Sequence[Entity]:
     vec = embed_text(query)
+    if _is_zero_vector(vec):
+        return []
     return list(
         Entity.objects.exclude(embedding=None)
         .annotate(distance=CosineDistance("embedding", vec))
@@ -120,11 +116,23 @@ def context_loader(query: str, limit_per_source: int = 3) -> dict[str, list]:
     """Assemble context for the agent before an LLM call.
 
     Returns a dict with keys `notes`, `sessions`, `entities`, each a list of
-    the top-K most relevant rows for `query`. The agent's planner / executor
-    nodes call this before every LLM turn.
+    the top-K most relevant rows for `query`. The invocation path injects this
+    context before every agent LLM call.
     """
     return {
         "notes": list(semantic_search_notes(query, limit_per_source)),
         "sessions": list(semantic_search_sessions(query, limit_per_source)),
         "entities": list(semantic_search_entities(query, limit_per_source)),
     }
+
+
+def format_context(context: dict[str, list]) -> str:
+    """Render retrieved memory rows for an LLM system prompt."""
+    lines: list[str] = []
+    for note in context.get("notes", []):
+        lines.append(f"Note: {note.title} ({note.filename})\n{note.content_preview}")
+    for session in context.get("sessions", []):
+        lines.append(f"Session summary: {session.summary_text}")
+    for entity in context.get("entities", []):
+        lines.append(f"Entity: {entity.entity_type}:{entity.name} {entity.attributes}")
+    return "\n\n".join(lines)

@@ -4,6 +4,7 @@ import { memoryApi } from "@/api/endpoints";
 import { useApi } from "@/hooks/useApi";
 import { Panel } from "@/components/shared/Panel";
 import { MetricCard } from "@/components/shared/MetricCard";
+import { StatusIndicator } from "@/components/shared/StatusIndicator";
 import { LogEntry } from "@/components/shared/LogEntry";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -16,31 +17,21 @@ type Target = "notes" | "entities" | "sessions";
 
 const TARGETS: { id: Target; label: string; icon: string }[] = [
   { id: "notes", label: "Notes", icon: "description" },
-  { id: "entities", label: "Entities", icon: "person" },
-  { id: "sessions", label: "Sessions", icon: "forum" },
+  { id: "entities", label: "Entities", icon: "database" },
+  { id: "sessions", label: "Sessions", icon: "bubble_chart" },
 ];
 
 export default function Memory() {
-  const { data: entities } = useApi(() => memoryApi.entities({ limit: 25 }), [], {
-    pollMs: 30_000,
-  });
-  const { data: notes } = useApi(() => memoryApi.notes({ limit: 25 }), [], {
-    pollMs: 30_000,
-  });
-  const { data: sessions } = useApi(
-    () => memoryApi.sessionEmbeddings({ limit: 25 }),
-    [],
-    { pollMs: 30_000 },
-  );
+  const { data: entities } = useApi(() => memoryApi.entities({ limit: 25 }), [], { pollMs: 30_000 });
+  const { data: notes } = useApi(() => memoryApi.notes({ limit: 25 }), [], { pollMs: 30_000 });
+  const { data: sessions } = useApi(() => memoryApi.sessionEmbeddings({ limit: 25 }), [], { pollMs: 30_000 });
 
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<Target>("notes");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [result, setResult] = useState<SimilarityResult | null>(null);
-  const [history, setHistory] = useState<
-    { ts: string; target: Target; query: string; count: number }[]
-  >([]);
+  const [history, setHistory] = useState<{ ts: string; target: Target; query: string; count: number }[]>([]);
 
   const onSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,23 +42,10 @@ export default function Memory() {
       const res = await memoryApi.search(query.trim(), target, 8);
       setResult(res);
       setHistory((h) =>
-        [
-          {
-            ts: new Date().toISOString(),
-            target,
-            query: query.trim(),
-            count: res.hits.length,
-          },
-          ...h,
-        ].slice(0, 12),
+        [{ ts: new Date().toISOString(), target, query: query.trim(), count: res.hits.length }, ...h].slice(0, 12),
       );
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "search failed";
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "search failed";
       setSearchError(message);
     } finally {
       setSearching(false);
@@ -75,221 +53,160 @@ export default function Memory() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+    <div className="p-6 max-w-[1600px] mx-auto">
       <PageHeader
-        title="Memory & Retrieval"
-        subtitle="Vector store · entity graph · note index"
+        title="SURAJCLAW | Memory & Retrieval"
+        subtitle="Manage semantic storage, browse notes, and run vector similarity checks."
         icon="memory"
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-        <MetricCard
-          label="Entities"
-          value={formatNumber(entities?.count ?? 0)}
-          icon="person"
-          tone="primary"
-          hint="People · Projects · Companies · Preferences"
-        />
-        <MetricCard
-          label="Notes Indexed"
-          value={formatNumber(notes?.count ?? 0)}
-          icon="description"
-          tone="tertiary"
-          hint="Markdown notes with embeddings"
-        />
-        <MetricCard
-          label="Session Embeddings"
-          value={formatNumber(sessions?.count ?? 0)}
-          icon="forum"
-          tone="secondary"
-          hint="Summaries indexed for recall"
-        />
+        <MetricCard label="Entities" value={formatNumber(entities?.count ?? 0)} icon="database" tone="primary" hint="People · Projects · Preferences" />
+        <MetricCard label="Notes Indexed" value={formatNumber(notes?.count ?? 0)} icon="description" tone="tertiary" hint="Markdown notes with embeddings" />
+        <MetricCard label="Session Embeddings" value={formatNumber(sessions?.count ?? 0)} icon="bubble_chart" tone="secondary" hint="Summaries indexed for recall" />
       </div>
 
-      {/* Similarity search */}
-      <Panel
-        title="Similarity Search"
-        icon="search"
-        subtitle="pgvector cosine distance"
-        className="mb-4"
-        scanline
-      >
-        <form className="flex flex-col sm:flex-row gap-2" onSubmit={onSearch}>
-          <div className="flex border border-border rounded">
+      {/* Similarity Search Tool */}
+      <Panel title="Similarity Search Tool" icon="manage_search" className="mb-6" scanline>
+        <form className="flex flex-col sm:flex-row gap-3" onSubmit={onSearch}>
+          <div className="flex border border-border rounded overflow-hidden">
             {TARGETS.map((t) => (
               <button
                 type="button"
                 key={t.id}
                 onClick={() => setTarget(t.id)}
                 className={cn(
-                  "px-3 py-2 text-xs font-display uppercase tracking-wider",
-                  "border-r border-border last:border-r-0",
-                  target === t.id
-                    ? "bg-primary/10 text-primary"
-                    : "text-ink-dim hover:text-ink",
+                  "px-3 py-2 text-xs font-display uppercase tracking-wider border-r border-border last:border-r-0",
+                  target === t.id ? "bg-primary/10 text-primary" : "text-ink-dim hover:text-ink",
                 )}
               >
-                <span
-                  className="material-symbols-outlined align-middle mr-1"
-                  style={{ fontSize: "14px" }}
-                >
-                  {t.icon}
-                </span>
+                <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: "14px" }}>{t.icon}</span>
                 {t.label}
               </button>
             ))}
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask the memory store…"
-            className="input flex-1"
-          />
-          <button
-            type="submit"
-            disabled={searching || !query.trim()}
-            className="btn-primary justify-center"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
-              {searching ? "hourglass_top" : "search"}
-            </span>
-            {searching ? "Searching…" : "Probe"}
+          <div className="flex-1 relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-display text-primary text-xs">SURAJCLAW &gt;</span>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search for recent session context..."
+              className="input w-full pl-28"
+            />
+          </div>
+          <button type="submit" disabled={searching || !query.trim()} className="btn-solid">
+            {searching ? "Searching..." : "Execute Vec Query"}
           </button>
         </form>
-        {searchError && (
-          <p className="text-xs text-danger mt-3">{searchError}</p>
-        )}
+        {searchError && <p className="text-xs text-danger mt-3">{searchError}</p>}
         {result && (
           <div className="mt-4">
-            <p className="label-mono mb-2">
-              Hits in {result.target} · {result.hits.length}
-            </p>
+            <p className="label-mono mb-2">Hits in {result.target} · {result.hits.length}</p>
             {result.hits.length === 0 ? (
-              <EmptyState
-                icon="filter_alt_off"
-                title="No matches"
-                description="Try a broader query or switch targets."
-              />
+              <EmptyState icon="filter_alt_off" title="No matches" description="Try a broader query or switch targets." />
             ) : (
               <ul className="space-y-2">
-                {result.hits.map((h) => (
-                  <SimilarityHitRow key={h.id} hit={h} />
-                ))}
+                {result.hits.map((h) => <SimilarityHitRow key={h.id} hit={h} />)}
               </ul>
             )}
           </div>
         )}
       </Panel>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel title="Entities" icon="person" bodyClassName="p-0">
+      {/* Memory domains grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Panel title="Entity (Facts)" icon="database" bodyClassName="p-0">
           <div className="max-h-96 overflow-y-auto scroll-thin">
             {!entities || entities.results.length === 0 ? (
               <EmptyState icon="person_off" title="No entities" />
             ) : (
-              <ul className="divide-y divide-border">
+              <div className="space-y-3 p-4">
                 {entities.results.map((e) => (
-                  <li key={e.id} className="px-4 py-2.5 hover:bg-bg-raised/40">
-                    <div className="flex items-center justify-between">
-                      <span className="font-display text-sm">{e.name}</span>
-                      <span className="label-mono text-primary">{e.entity_type}</span>
+                  <div key={e.id} className="p-4 bg-bg-raised rounded-lg hover:bg-bg-overlay transition-colors cursor-pointer">
+                    <div className="flex justify-between mb-2">
+                      <span className="font-display text-xs font-bold text-secondary">{e.entity_type}</span>
+                      <span className="text-[9px] text-ink-mute font-display">{formatRelative(e.last_updated)}</span>
                     </div>
+                    <p className="text-sm">{e.name}</p>
                     <p className="text-[11px] text-ink-dim mt-1 line-clamp-2 font-mono">
                       {Object.keys(e.attributes).length === 0
                         ? "(no attributes)"
-                        : Object.entries(e.attributes)
-                            .slice(0, 3)
-                            .map(([k, v]) => `${k}=${String(v)}`)
-                            .join(" · ")}
+                        : Object.entries(e.attributes).slice(0, 3).map(([k, v]) => `${k}=${String(v)}`).join(" · ")}
                     </p>
-                    <p className="text-[10px] text-ink-mute mt-1">
-                      {formatRelative(e.last_updated)}
-                    </p>
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
         </Panel>
 
-        <Panel title="Notes" icon="description" bodyClassName="p-0">
+        <Panel title="NoteIndex (Markdown)" icon="description" bodyClassName="p-0">
           <div className="max-h-96 overflow-y-auto scroll-thin">
             {!notes || notes.results.length === 0 ? (
               <EmptyState icon="note_alt" title="No notes" />
             ) : (
-              <ul className="divide-y divide-border">
+              <div className="space-y-2 p-4">
                 {notes.results.map((n) => (
-                  <li key={n.id} className="px-4 py-2.5 hover:bg-bg-raised/40">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-display text-sm truncate">{n.title}</span>
-                      <span className="text-[10px] text-ink-mute font-mono shrink-0">
-                        {formatRelative(n.updated_at)}
+                  <div key={n.id} className="group">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="material-symbols-outlined text-primary" style={{ fontSize: "16px" }}>sticky_note_2</span>
+                      <span className="font-display text-xs font-semibold group-hover:text-primary transition-colors cursor-pointer">
+                        {n.title}
                       </span>
                     </div>
-                    <p className="text-[10px] text-ink-mute font-mono truncate">
-                      {n.filename}
-                    </p>
-                    {n.content_preview && (
-                      <p className="text-[11px] text-ink-dim mt-1 line-clamp-2">
-                        {n.content_preview}
-                      </p>
-                    )}
-                  </li>
+                    <div className="bg-bg-lowest p-3 rounded-sm border-l-2 border-primary/40">
+                      <p className="text-[11px] text-ink-dim line-clamp-3">{n.content_preview || n.filename}</p>
+                    </div>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
         </Panel>
 
-        <Panel title="Session Embeddings" icon="forum" bodyClassName="p-0">
+        <Panel title="SessionEmbeddings" icon="bubble_chart" bodyClassName="p-0"
+          actions={<StatusIndicator status="info" label="Realtime" />}
+        >
           <div className="max-h-96 overflow-y-auto scroll-thin">
             {!sessions || sessions.results.length === 0 ? (
               <EmptyState icon="chat" title="No summaries" />
             ) : (
-              <ul className="divide-y divide-border">
+              <div className="space-y-3 p-4">
                 {sessions.results.map((s) => (
-                  <li key={s.id} className="px-4 py-2.5 hover:bg-bg-raised/40">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] text-primary truncate">
-                        {s.session.slice(0, 8)}…
-                      </span>
-                      <span className="text-[10px] text-ink-mute font-mono">
-                        {formatRelative(s.created_at)}
-                      </span>
+                  <div key={s.id} className="flex items-start gap-3 p-2 border-l border-tertiary/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
+                    <div className="flex-1">
+                      <div className="flex justify-between">
+                        <span className="font-display text-[10px] font-bold uppercase">{s.session.slice(0, 8)}...</span>
+                        <span className="font-display text-[10px] text-ink-mute">{formatRelative(s.created_at)}</span>
+                      </div>
+                      <p className="text-[11px] text-ink-dim mt-1 italic line-clamp-2">{s.summary_text || "(empty summary)"}</p>
                     </div>
-                    <p className="text-[11px] text-ink-dim mt-1 line-clamp-3">
-                      {s.summary_text || "(empty summary)"}
-                    </p>
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
         </Panel>
       </div>
 
       {/* Retrieval log */}
-      <Panel title="Retrieval Log" icon="history" className="mt-4" bodyClassName="p-0">
+      <Panel title="Retrieval Log Stream" icon="history" className="mt-6" bodyClassName="p-0">
         {history.length === 0 ? (
-          <EmptyState
-            icon="hourglass_empty"
-            title="No probes yet"
-            description="Search history will accumulate here for the session."
-          />
+          <EmptyState icon="hourglass_empty" title="No probes yet" description="Search history will accumulate here." />
         ) : (
-          <ul className="divide-y divide-border">
+          <div className="bg-bg-lowest p-4 font-mono text-xs space-y-1">
             {history.map((h, i) => (
-              <li key={i} className="px-4 py-2">
-                <LogEntry
-                  timestamp={h.ts}
-                  tag={`PROBE·${h.target.toUpperCase()}`}
-                  message={`${h.query} — ${h.count} hit${h.count === 1 ? "" : "s"}`}
-                  tone="primary"
-                />
-              </li>
+              <LogEntry key={i} timestamp={h.ts} tag={`PROBE·${h.target.toUpperCase()}`}
+                message={`${h.query} — ${h.count} hit${h.count === 1 ? "" : "s"}`} tone="primary"
+              />
             ))}
-          </ul>
+            <div className="flex items-center gap-2 text-primary mt-2">
+              <span>SURAJCLAW &gt;</span>
+              <span className="w-2 h-4 bg-primary animate-pulse" />
+            </div>
+          </div>
         )}
       </Panel>
     </div>
@@ -299,16 +216,14 @@ export default function Memory() {
 function SimilarityHitRow({ hit }: { hit: SimilarityHit }) {
   const score = Math.max(0, 1 - hit.distance);
   return (
-    <li className="border border-border rounded-md p-3 bg-bg-base/40 hover:border-primary/40 transition-colors">
+    <li className="border border-border rounded-md p-3 bg-bg-raised hover:border-primary/40 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="label-mono text-primary">{hit.kind}</span>
             <span className="font-display text-sm truncate">{hit.title}</span>
           </div>
-          <p className="text-[11px] text-ink-dim line-clamp-2">
-            {truncate(hit.snippet, 220)}
-          </p>
+          <p className="text-[11px] text-ink-dim line-clamp-2">{truncate(hit.snippet, 220)}</p>
         </div>
         <div className="text-right shrink-0">
           <p className="font-mono text-xs text-primary">{score.toFixed(3)}</p>

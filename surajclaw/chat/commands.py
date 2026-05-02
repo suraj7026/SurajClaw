@@ -203,13 +203,13 @@ def _stop(_ctx: CommandContext) -> CommandResult:
 
 
 def _model(ctx: CommandContext) -> CommandResult:
-    """Pin the next turn to a specific model: ``/model gemini`` or ``/model gemma``."""
+    """Pin or clear the Gemini model override for this session."""
     from core.models import SystemState
 
     target = ctx.args.strip().lower()
-    if target not in {"gemini", "gemma", "ollama", "auto"}:
+    if target not in {"gemini", "auto"}:
         return CommandResult(
-            text="Usage: `/model gemini | gemma | auto`",
+            text="Usage: `/model gemini | auto`",
         )
     SystemState.objects.update_or_create(
         key=f"model_pin:{ctx.session_id}",
@@ -222,13 +222,13 @@ def _notes(_ctx: CommandContext) -> CommandResult:
     from memory.models import NoteIndex
 
     items = list(
-        NoteIndex.objects.order_by("-updated_at").values("title", "path")[:10]
+        NoteIndex.objects.order_by("-updated_at").values("title", "filename")[:10]
     )
     if not items:
         return CommandResult(text="No notes indexed yet.")
     lines = ["Recent notes:"]
     for n in items:
-        lines.append(f"  {n['title']}  ({n['path']})")
+        lines.append(f"  {n['title']}  ({n['filename']})")
     return CommandResult(text="\n".join(lines))
 
 
@@ -242,11 +242,15 @@ def _deny(ctx: CommandContext) -> CommandResult:
 
 def _decide_approval(ctx: CommandContext, *, decision: str) -> CommandResult:
     """``/approve <request_id>`` or ``/deny <request_id>``."""
+    from django.utils import timezone
+
+    from approval.gate import notify_responded
     from approval.models import ApprovalRequest
 
     req_id = ctx.args.strip()
     if not req_id:
-        return CommandResult(text=f"Usage: `/{decision[:-1] + 'e'} <request_id>`")
+        command = "approve" if decision == "approved" else "deny"
+        return CommandResult(text=f"Usage: `/{command} <request_id>`")
     try:
         req = ApprovalRequest.objects.get(id=req_id)
     except (ApprovalRequest.DoesNotExist, ValueError):
@@ -256,9 +260,12 @@ def _decide_approval(ctx: CommandContext, *, decision: str) -> CommandResult:
     req.status = (
         ApprovalRequest.Status.APPROVED
         if decision == "approved"
-        else ApprovalRequest.Status.DENIED
+        else ApprovalRequest.Status.REJECTED
     )
-    req.save(update_fields=["status"])
+    req.responded_by = ctx.sender_id or ctx.channel
+    req.responded_at = timezone.now()
+    req.save(update_fields=["status", "responded_by", "responded_at"])
+    notify_responded(str(req.id))
     return CommandResult(text=f"{req_id} {decision}.")
 
 
@@ -269,6 +276,42 @@ def _doctor(_ctx: CommandContext) -> CommandResult:
     lines = [f"{check['name']}: {check['status']}" for check in report["checks"]]
     lines.append(f"overall: {report['status']}")
     return CommandResult(text="\n".join(lines))
+
+
+def _agents(_ctx: CommandContext) -> CommandResult:
+    from agents.registry import list_agents
+
+    lines = ["Available agents:"]
+    for agent in list_agents():
+        if agent.direct_access:
+            lines.append(f"  {agent.id} — {agent.description}")
+    return CommandResult(text="\n".join(lines))
+
+
+def _agent(ctx: CommandContext) -> CommandResult:
+    from agents.invocation import invoke_agent
+    from agents.registry import can_invoke_directly
+    from agents.types import AgentInvocation
+
+    parts = ctx.args.split(maxsplit=1)
+    if len(parts) != 2:
+        return CommandResult(text="Usage: `/agent <agent_id> <task>`")
+    agent_id, task = parts
+    try:
+        if not can_invoke_directly(agent_id):
+            return CommandResult(text=f"Agent `{agent_id}` cannot be invoked directly.")
+    except LookupError:
+        return CommandResult(text=f"Unknown agent `{agent_id}`. Try `/agents`.")
+    result = invoke_agent(
+        AgentInvocation(
+            session_id=ctx.session_id,
+            source=ctx.channel,
+            agent_id=agent_id,
+            task=task,
+            context={},
+        )
+    )
+    return CommandResult(text=result.output)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +344,7 @@ register(Command(
 register(Command(
     name="model",
     aliases=(),
-    description="Pin model: /model gemini | gemma | auto.",
+    description="Pin model: /model gemini | auto.",
     accepts_args=True,
     owner_only=True,
     handler=_model,
@@ -333,8 +376,24 @@ register(Command(
 register(Command(
     name="doctor",
     aliases=("health",),
-    description="Run system health checks (DB, Redis, Ollama, Gemini, pgvector).",
+    description="Run system health checks (DB, Celery storage, Gemini, pgvector).",
     accepts_args=False,
     owner_only=True,
     handler=_doctor,
+))
+register(Command(
+    name="agents",
+    aliases=(),
+    description="List specialized agents.",
+    accepts_args=False,
+    owner_only=True,
+    handler=_agents,
+))
+register(Command(
+    name="agent",
+    aliases=(),
+    description="Invoke an agent: /agent <agent_id> <task>.",
+    accepts_args=True,
+    owner_only=True,
+    handler=_agent,
 ))

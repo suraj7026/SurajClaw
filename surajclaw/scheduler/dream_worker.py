@@ -83,7 +83,7 @@ def run_dream(trigger: str = "manual", sessions_processed: int = 0) -> None:
     try:
         # Agents module loaded lazily so missing LangGraph during early-phase
         # deployments does not break Celery startup.
-        from agents.nodes.dream import consolidate
+        from agents.dream import consolidate
 
         result = consolidate(trigger=trigger, sessions_processed=sessions_processed)
 

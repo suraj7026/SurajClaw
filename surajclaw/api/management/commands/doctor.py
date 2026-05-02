@@ -16,7 +16,7 @@ _GLYPH = {"ok": "OK ", "warn": "WARN", "error": "ERR "}
 
 
 class Command(BaseCommand):
-    help = "Run SurajClaw self-checks (DB, Redis, Ollama, Gemini, pgvector, owners)."
+    help = "Run SurajClaw self-checks (DB, Celery storage, Gemini, pgvector, owners)."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(

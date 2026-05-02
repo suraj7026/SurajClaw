@@ -6,6 +6,7 @@ interface Props {
   actions?: React.ReactNode;
   icon?: string;
   scanline?: boolean;
+  glass?: boolean;
   bodyClassName?: string;
   className?: string;
   children: React.ReactNode;
@@ -17,12 +18,19 @@ export function Panel({
   actions,
   icon,
   scanline,
+  glass,
   bodyClassName,
   className,
   children,
 }: Props) {
   return (
-    <section className={cn("panel", scanline && "scanline", className)}>
+    <section
+      className={cn(
+        glass ? "panel-glass" : "panel",
+        scanline && "scanline",
+        className,
+      )}
+    >
       {(title || actions) && (
         <header className="panel-header">
           <div className="flex items-center gap-2 min-w-0">
@@ -36,7 +44,7 @@ export function Panel({
             )}
             <div className="min-w-0">
               {title && (
-                <h3 className="font-display text-sm tracking-wider uppercase truncate">
+                <h3 className="font-display text-xs font-bold tracking-[0.1rem] uppercase truncate">
                   {title}
                 </h3>
               )}

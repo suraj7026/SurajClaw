@@ -36,11 +36,11 @@ export function LogEntry({ timestamp, tag, message, tone = "info", className }: 
     <div className={cn("font-mono text-[11px] leading-relaxed flex gap-3", className)}>
       <span className="text-ink-mute shrink-0">{formatStamp(timestamp)}</span>
       {tag && (
-        <span className={cn("shrink-0 uppercase tracking-wider", TONES[tone])}>
+        <span className={cn("shrink-0 font-bold uppercase tracking-wider", TONES[tone])}>
           [{tag}]
         </span>
       )}
-      <span className={cn("min-w-0 break-words", TONES[tone])}>{message}</span>
+      <span className="min-w-0 break-words text-ink">{message}</span>
     </div>
   );
 }

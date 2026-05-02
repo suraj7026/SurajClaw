@@ -1,18 +1,25 @@
 import { cn } from "@/lib/cn";
 
 interface Props {
-  value: number; // 0..100
+  value: number;
   label?: string;
   hint?: string;
   tone?: "primary" | "secondary" | "tertiary" | "danger";
   className?: string;
 }
 
-const TONES = {
-  primary: "bg-primary shadow-[0_0_10px_rgba(129,236,255,0.55)]",
-  secondary: "bg-secondary shadow-[0_0_10px_rgba(255,191,0,0.55)]",
-  tertiary: "bg-tertiary shadow-[0_0_10px_rgba(184,255,187,0.55)]",
-  danger: "bg-danger shadow-[0_0_10px_rgba(255,107,107,0.55)]",
+const BAR_COLORS = {
+  primary: "bg-primary",
+  secondary: "bg-secondary",
+  tertiary: "bg-tertiary",
+  danger: "bg-danger",
+};
+
+const TEXT_COLORS = {
+  primary: "text-primary",
+  secondary: "text-secondary",
+  tertiary: "text-tertiary",
+  danger: "text-danger",
 };
 
 export function ProgressBar({
@@ -27,13 +34,21 @@ export function ProgressBar({
     <div className={cn("space-y-1.5", className)}>
       {(label || hint) && (
         <div className="flex items-center justify-between">
-          {label && <span className="label-mono">{label}</span>}
-          {hint && <span className="label-mono text-ink-dim">{hint}</span>}
+          {label && (
+            <span className="text-[10px] font-display uppercase tracking-widest text-ink-mute">
+              {label}
+            </span>
+          )}
+          {hint && (
+            <span className={cn("text-[10px] font-display", TEXT_COLORS[tone])}>
+              {hint}
+            </span>
+          )}
         </div>
       )}
-      <div className="relative h-1.5 bg-bg-base border border-border rounded-sm overflow-hidden">
+      <div className="relative h-1.5 bg-bg-overlay rounded-full overflow-hidden">
         <div
-          className={cn("h-full transition-all duration-500 ease-out", TONES[tone])}
+          className={cn("h-full rounded-full transition-all duration-500 ease-out", BAR_COLORS[tone])}
           style={{ width: `${pct}%` }}
         />
       </div>

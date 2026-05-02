@@ -202,6 +202,15 @@ export interface Metrics {
   last_dream_at: ISODateString | null;
 }
 
+export interface AgentInfo {
+  id: string;
+  display_name: string;
+  description: string;
+  direct_access: boolean;
+  delegatable: boolean;
+  allowed_tools: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Doctor
 // ---------------------------------------------------------------------------

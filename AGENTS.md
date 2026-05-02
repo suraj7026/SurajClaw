@@ -1,96 +1,44 @@
 # AGENTS.md
 
-This file contains crucial instructions and guidelines for any AI agents (like OpenCode, Cursor, or Copilot) operating in the Personal AI Assistant repository. Read this completely before generating or modifying code.
+## Scope
+- Real application code lives in `surajclaw/`; the repo root mainly holds `.env`, docs, and editor/OpenCode metadata.
+- `PersonalAI_SoftwareDoc.md` is design intent, not runtime truth. When it conflicts with code or config under `surajclaw/`, trust the code.
 
-## 1. Project Overview & Architecture
-- **Project Purpose:** A personal, local-first AI assistant with Git automation, web search, notes generation, and Gmail reading capabilities.
-- **Backend Stack:** Python, FastAPI, LangGraph, LangChain, ChromaDB, SQLite.
-- **Frontend Stack:** React 18, Vite, TailwindCSS.
-- **Environment:** Ubuntu Linux, Intel i5 9th Gen, 8GB RAM, GTX 1650 (4GB VRAM).
-- **LLM Routing:** 
-  - Primary (Local): Gemma 4 E2B (via Ollama) for fast, private, low-resource tasks.
-  - Secondary (Cloud): Gemini API for complex tasks.
+## Stack And Entrypoints
+- Backend is Django + Channels + Celery + Postgres/pgvector. Redis is not used; Celery uses Postgres for broker/results. Frontend is React/Vite in `surajclaw/ui/`.
+- There are two web surfaces: Django serves the lightweight chat page from `surajclaw/chat/` at `/`, and the operator console lives in `surajclaw/ui/`.
+- `surajclaw/manage.py` defaults to `config.settings.development`.
+- HTTP and WebSocket traffic both enter through `surajclaw/config/asgi.py`; `make dev` runs Daphne on `:8000`.
+- Chat turns run inline in `chat/consumers.py`; the consumer passes a direct token callback to `agents.graph.run_turn()`. Celery is only needed for scheduled/background jobs.
+- `agents/orchestrator.py` is intentionally thin. Normal chat invokes the `general` agent, which uses Gemini tool calling and can delegate to `google_workspace`, `code_executor`, or `notes` subagents.
 
-## 2. Build, Lint, and Test Commands
+## Commands
+- Run backend commands from `surajclaw/`. The `Makefile` assumes the virtualenv lives at `../.venv`, not inside `surajclaw/`.
+- Setup: `cd surajclaw && make install`
+- Migrations: `cd surajclaw && make migrate`
+- Core service for local dev: `cd surajclaw && docker compose up -d db`
+- Backend server: `cd surajclaw && make dev`
+- Worker / scheduler: `cd surajclaw && make worker`, `cd surajclaw && make beat`, or `cd surajclaw && make celery`
+- Frontend: `cd surajclaw/ui && npm install && npm run dev`
+- Full stack via Compose: `cd surajclaw && docker compose up`
+- Health check: `cd surajclaw && python manage.py doctor`
+- Google account bootstrap: `cd surajclaw && python manage.py google_oauth_login --account <label>`
 
-### Backend (Python)
-- **Install Dependencies:** `pip install -r requirements.txt`
-- **Run Gateway (Dev):** `uvicorn main:app --reload --host 127.0.0.1 --port 8000`
-- **Run Gateway (Prod):** Executed via systemd user service.
-- **Linting & Formatting:** 
-  - Lint: `ruff check .`
-  - Format: `ruff format .`
-  - Type Check: `mypy .`
-- **Testing (pytest):**
-  - Run all tests: `pytest`
-  - Run tests in a directory: `pytest tests/`
-  - Run a specific test file: `pytest tests/test_agents.py`
-  - **Run a single test function:** `pytest tests/test_agents.py::test_git_agent_routing`
-  - Run tests with print output: `pytest -s -v`
+## Data And Env
+- The environment file lives at the repo root as `.env`; `config/settings/base.py` loads `../.env`, and `docker-compose.yml` also points at that root file.
+- If you point `POSTGRES_HOST` at a fresh non-`pgvector/pgvector` Postgres, run `cd surajclaw && python manage.py ensure_pgvector` before `make migrate`.
+- Leave `CELERY_BROKER_URL` blank to derive a Postgres SQLAlchemy broker URL from `POSTGRES_*`; `CELERY_RESULT_BACKEND` should stay `django-db`.
+- OAuth refresh tokens are stored per account under the repo-root `google_tokens/` directory.
+- Owner auth fails closed. Unauthenticated web/Telegram flows are denied unless the user is logged in through Django auth or `OWNER_ALLOW_FROM` / `TELEGRAM_OWNER_ID` is set. `python manage.py doctor` checks this.
 
-### Frontend (React/Vite in `ui/` folder)
-- **Install Dependencies:** `cd ui && npm install`
-- **Run Dev Server:** `cd ui && npm run dev`
-- **Build for Production:** `cd ui && npm run build`
-- **Linting:** `cd ui && npm run lint`
-- **Testing (Vitest/Jest):**
-  - Run all frontend tests: `cd ui && npm run test`
-  - **Run a single test file:** `cd ui && npx vitest run path/to/test.file.ts`
+## Verification
+- `cd surajclaw && make test` is just `python manage.py test`.
+- There are currently no checked-in Django or frontend test cases, no `pytest`/Vitest setup, and no `.github/workflows/` or pre-commit config. Expect manual smoke testing to be the real verification path.
+- Prefer targeted checks: `cd surajclaw && python manage.py doctor`, `cd surajclaw && python manage.py test_gmail --account <label>`, and `cd surajclaw/ui && npm run build`.
+- `make lint` / `make format` call Ruff, but `surajclaw/requirements.txt` does not install Ruff. `ui/package.json` defines `npm run lint`, but the repo does not currently declare ESLint or a repo-local ESLint config. Do not assume either lint command works in a fresh clone.
 
-## 3. Code Style & Implementation Guidelines
-
-### Python (Backend)
-1. **Formatting & Style:** 
-   - Strictly follow `ruff` default configurations (PEP 8 compliant).
-   - Use double quotes for strings.
-   - Keep maximum line length to 88-100 characters.
-2. **Type Hinting:** 
-   - Mandatory for all function arguments and return types.
-   - LangGraph states must use `TypedDict` with `Annotated` reducers.
-3. **Imports:**
-   - Grouping: Standard library, third-party packages, local application modules.
-   - Use absolute imports (e.g., `from agents.supervisor import SupervisorNode`) over relative imports.
-4. **Error Handling & Resilience:** 
-   - **Never** use bare `except:` clauses. Catch specific exceptions.
-   - Tools must catch exceptions and return string error messages rather than crashing the LangGraph execution thread.
-   - Example: `except subprocess.TimeoutExpired as e: return f"Command timed out: {e}"`
-5. **Naming Conventions:**
-   - `snake_case` for variables, functions, filenames.
-   - `PascalCase` for classes (e.g., `AgentState`).
-   - `UPPER_SNAKE_CASE` for global constants.
-6. **LangGraph & Tool Design:**
-   - Tools (`@tool`) must have comprehensive docstrings; the LLM routing depends on them.
-   - Validate paths to prevent directory traversal (e.g., verify path starts with `WORKSPACE_DIR`).
-
-### React (Frontend)
-1. **Component Style:** 
-   - Exclusively use Functional Components with React Hooks.
-   - Keep components modular and single-responsibility.
-2. **Styling (TailwindCSS):** 
-   - Use Tailwind utility classes directly in `className`. Avoid custom CSS unless necessary.
-3. **Naming Conventions:**
-   - `PascalCase` for component files (`ChatInterface.jsx`) and component functions.
-   - `camelCase` for variables, state variables, and helper functions.
-4. **State Management:** 
-   - Use React Context for global state (e.g., UI themes, WebSocket connection state).
-   - Avoid heavy state libraries like Redux unless the UI complexity grows significantly.
-
-## 4. System Constraints & Safety Rules
-1. **Resource Limits:** The target hardware is RAM-constrained (8GB total, ~4GB available). Do not run more than 2 concurrent agent threads. Do not introduce large in-memory datasets.
-2. **Security & Sandboxing:**
-   - **Bash Tool:** Must enforce a denylist (e.g., no `rm -rf /`). Provide timeouts.
-   - **File Tools:** Must strictly constrain operations to the `~/assistant/workspace` directory.
-   - **Gmail Tool:** Must remain read-only (`gmail.readonly` scope). Do not implement send capabilities.
-3. **Git Operations:**
-   - Agents should not push directly to the `main` branch.
-   - Create feature branches: `feature/short-description` or `fix/issue-description`.
-   - Ask for user confirmation before executing `git push` to a remote origin.
-
-## 5. Development Workflow for Agents
-1. **Understand First:** Before modifying the LangGraph architecture, trace the current routing logic in `main.py` and `agents/`.
-2. **Self-Verification:** Write unit tests for new tools. Use debug statements and test outputs to verify behavior before finalizing.
-3. **Minimal Modifications:** Only modify files necessary for the requested feature. Do not refactor unrelated code.
-4. **No Chitchat Comments:** Add code comments to explain *why* complex orchestration logic exists, not *what* basic Python syntax does.
-
----
-*Note to Agent: Always prioritize the `PersonalAI_SoftwareDoc.md` for architectural context when making systemic changes.*
+## Wiring Gotchas
+- Tool registration is import-side-effect based. If you add a new tool module, wire it into `tools.registry._ensure_builtin_tools_loaded()` or it never becomes visible.
+- Celery task registration is also import-side-effect based. New task modules must be imported from `scheduler/tasks.py` or workers will reject them as unregistered.
+- Vite dev proxy defaults to `http://localhost:8000` and forwards `/api`, `/ws`, `/admin`, and `/static`; keep `VITE_API_BASE_URL` and `VITE_WS_BASE_URL` blank for same-origin dev unless you intentionally need cross-origin URLs.
+- `surajclaw/ui/vite.config.ts` is the source file. The repo also tracks emitted `vite.config.js` and `vite.config.d.ts` from `tsc -b`, so edit the `.ts` file first.

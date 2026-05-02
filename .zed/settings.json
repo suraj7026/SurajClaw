@@ -1,0 +1,10 @@
+{
+  "context_servers": {
+    "docs": {
+      "source": "custom",
+      "type": "http",
+      "url": "https://docs.browser-use.com/mcp",
+      "headers": {}
+    }
+  }
+}

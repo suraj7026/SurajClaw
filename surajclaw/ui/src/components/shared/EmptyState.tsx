@@ -17,13 +17,15 @@ export function EmptyState({ icon = "blur_on", title, description, action, class
       )}
     >
       <span
-        className="material-symbols-outlined text-primary/60 mb-2"
-        style={{ fontSize: "32px" }}
+        className="material-symbols-outlined text-primary/50 mb-3"
+        style={{ fontSize: "36px" }}
       >
         {icon}
       </span>
-      <p className="font-display text-sm uppercase tracking-wider text-ink">{title}</p>
-      {description && <p className="text-xs mt-1 max-w-xs">{description}</p>}
+      <p className="font-display text-sm font-bold uppercase tracking-wider text-ink">
+        {title}
+      </p>
+      {description && <p className="text-xs mt-1.5 max-w-xs text-ink-dim">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

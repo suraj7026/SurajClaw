@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.messages import BaseMessage
+
 from langgraph.graph.message import add_messages
 
 
@@ -21,11 +23,21 @@ class AgentState(TypedDict, total=False):
     session_id: str
     source: str  # telegram / web / cron / trigger
     user_message: str
-    plan: list[dict[str, Any]]  # sub-tasks produced by planner
-    current_step: int
     tool_calls: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]
     context: dict[str, Any]  # notes + entities + session embeddings
-    messages: Annotated[list[dict[str, Any]], add_messages]
-    reflection: str
+    messages: list[dict[str, Any]]
+    agent_messages: Annotated[list[BaseMessage], add_messages]
     final_response: str
+    active_agent: str
+    requested_agent: str | None
+    agent_trace: list[dict[str, Any]]
+    agent_results: list[dict[str, Any]]
+    last_agent_result: dict[str, Any]
+    pending_approval: dict[str, Any] | None
+    done: bool
+    step_count: int
+    max_steps: int
+    account_label: str | None
+    agent_result: dict[str, Any]
+    model_used: str | None

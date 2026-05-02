@@ -9,7 +9,7 @@ class Session(models.Model):
     """One conversation session. A session groups messages and belongs to a source.
 
     Sessions are created on the first inbound message from a given source and
-    closed after an idle timeout (the reflector node writes the summary then).
+    closed after an idle timeout.
     """
 
     class Source(models.TextChoices):

@@ -33,7 +33,6 @@ function uuidV4(): UUID {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  // Fallback (non-crypto, dev-only).
   return "00000000-0000-4000-8000-000000000000".replace(/0/g, () =>
     Math.floor(Math.random() * 16).toString(16),
   );
@@ -42,7 +41,22 @@ function uuidV4(): UUID {
 export default function Chat() {
   const [sessionId] = useState<UUID>(() => uuidV4());
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "seed-assistant",
+      role: "assistant",
+      content:
+        "Hello! I've analyzed the recent repository changes. The performance regression in the rendering pipeline seems to stem from a recursive listener in the curator module. Would you like me to generate a patch or should we walk through the memory logs together?",
+      ts: new Date(Date.now() - 120000).toISOString(),
+    },
+    {
+      id: "seed-user",
+      role: "user",
+      content:
+        "Let's look at the memory logs first. Can you pull up the logs from the last 2 hours filtered by the curator tag?",
+      ts: new Date(Date.now() - 60000).toISOString(),
+    },
+  ]);
   const [streaming, setStreaming] = useState(false);
   const streamRef = useRef<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -76,7 +90,7 @@ export default function Chat() {
             next.push(m);
           } else {
             current.content += piece;
-            const idx = next.findIndex((m) => m.id === current.id);
+            const idx = next.findIndex((msg) => msg.id === current.id);
             if (idx >= 0) next[idx] = { ...current };
           }
           return next;
@@ -89,12 +103,7 @@ export default function Chat() {
         if (!text) return;
         setMessages((prev) => [
           ...prev,
-          {
-            id: uuidV4(),
-            role: "system",
-            content: text,
-            ts: new Date().toISOString(),
-          },
+          { id: uuidV4(), role: "system", content: text, ts: new Date().toISOString() },
         ]);
         return;
       }
@@ -136,7 +145,6 @@ export default function Chat() {
         return;
       }
       default:
-        // Unknown frame — log and ignore so we don't crash the UI.
         // eslint-disable-next-line no-console
         console.debug("unknown ws frame", frame);
     }
@@ -146,141 +154,89 @@ export default function Chat() {
     onMessage,
   });
 
-  // Auto-scroll on new messages.
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   const wsLabel = useMemo(() => {
     switch (status) {
-      case "open":
-        return "CONNECTED";
-      case "connecting":
-        return "CONNECTING";
-      case "closed":
-        return "OFFLINE";
-      case "error":
-        return "ERROR";
-      default:
-        return "IDLE";
+      case "open": return "CONNECTED";
+      case "connecting": return "CONNECTING";
+      case "closed": return "OFFLINE";
+      case "error": return "ERROR";
+      default: return "IDLE";
     }
   }, [status]);
 
-  const wsKind =
-    status === "open"
-      ? "ok"
-      : status === "connecting"
-        ? "info"
-        : status === "error"
-          ? "error"
-          : "warn";
+  const wsKind = status === "open" ? "ok" : status === "connecting" ? "info" : status === "error" ? "error" : "warn";
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
     if (!text || status !== "open") return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: uuidV4(),
-        role: "user",
-        content: text,
-        ts: new Date().toISOString(),
-      },
-    ]);
+    setMessages((prev) => [...prev, { id: uuidV4(), role: "user", content: text, ts: new Date().toISOString() }]);
     send({ message: text });
     setDraft("");
     setStreaming(true);
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-      <PageHeader
-        title="Live Chat"
-        subtitle={`Session ${sessionId.slice(0, 8)}…`}
-        icon="forum"
+    <div className="p-6 max-w-[1600px] mx-auto">
+      <PageHeader title="SurajClaw - Aether Monitor" subtitle={`Agent Chat Mode · Session ${sessionId.slice(0, 8)}…`} icon="smart_toy"
         actions={<StatusIndicator status={wsKind} label={wsLabel} />}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
-        <Panel
-          title="Conversation"
-          icon="chat"
-          subtitle="Web channel · real-time stream"
-          bodyClassName="p-0"
-        >
-          <div
-            ref={scrollRef}
-            className="h-[60vh] overflow-y-auto scroll-thin px-4 py-3 space-y-3"
-          >
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* Conversation pane */}
+        <Panel title="Agent Chat Mode" icon="forum" subtitle="Live assistant session with context streaming" bodyClassName="p-0 flex flex-col">
+          <div ref={scrollRef} className="flex-1 h-[60vh] overflow-y-auto scroll-thin px-5 py-4 space-y-4">
             {messages.length === 0 ? (
-              <EmptyState
-                icon="chat_bubble"
-                title="Start the conversation"
-                description="Try a slash command (/help, /status) or just ask the agent something."
-              />
+              <EmptyState icon="chat_bubble" title="Start the conversation" description="Try a slash command (/help, /status) or ask the agent something." />
             ) : (
               messages.map((m) => <Bubble key={m.id} message={m} />)
             )}
           </div>
-          <form
-            onSubmit={handleSend}
-            className="border-t border-border p-3 flex gap-2"
-          >
-            <input
-              type="text"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={
-                status === "open" ? "Ask anything…" : "Connecting WebSocket…"
-              }
-              disabled={status !== "open"}
-              className="input flex-1"
+          <form onSubmit={handleSend} className="border-t border-border p-4 flex gap-3 bg-bg-surface">
+            <input type="text" value={draft} onChange={(e) => setDraft(e.target.value)}
+              placeholder={status === "open" ? "Type a message…" : "Connecting WebSocket…"}
+              disabled={status !== "open"} className="input flex-1"
             />
-            <button
-              type="submit"
-              disabled={status !== "open" || !draft.trim() || streaming}
-              className="btn-primary"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
-                send
-              </span>
+            <button type="submit" disabled={status !== "open" || !draft.trim() || streaming} className="btn-solid">
+              <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>send</span>
               Send
             </button>
           </form>
         </Panel>
 
-        <Panel
-          title="Active Sessions"
-          icon="history"
-          subtitle="Other live conversations"
-        >
-          {!history || history.results.length === 0 ? (
-            <EmptyState icon="history_toggle_off" title="No live sessions" />
-          ) : (
-            <ul className="space-y-2">
-              {history.results.map((s) => (
-                <li
-                  key={s.id}
-                  className="border border-border rounded p-2 bg-bg-base/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="label-mono text-primary">{s.source}</span>
-                    <span className="text-[10px] text-ink-mute font-mono">
-                      {formatRelative(s.started_at)}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-ink-dim line-clamp-2 mt-1">
-                    {s.summary || "in progress…"}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
+        {/* Context sidebar */}
+        <div className="space-y-6">
+          <Panel title="Connection" icon="wifi" bodyClassName="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <StatusIndicator status={wsKind} label={wsLabel} pulse={status === "open"} />
+            </div>
+            <Field label="Session" value={sessionId.slice(0, 8)} />
+            <Field label="Channel" value="web" />
+            <Field label="Protocol" value="WebSocket" />
+          </Panel>
+
+          <Panel title="Active Sessions" icon="history" subtitle="Other live conversations">
+            {!history || history.results.length === 0 ? (
+              <EmptyState icon="history_toggle_off" title="No live sessions" />
+            ) : (
+              <ul className="space-y-2">
+                {history.results.map((s) => (
+                  <li key={s.id} className="border border-border rounded p-3 bg-bg-surface hover:bg-bg-raised transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-display text-xs text-primary font-bold uppercase tracking-wider">{s.source}</span>
+                      <span className="text-[10px] text-ink-mute font-mono">{formatRelative(s.started_at)}</span>
+                    </div>
+                    <p className="text-[11px] text-ink-dim line-clamp-2">{s.summary || "in progress…"}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
       </div>
     </div>
   );
@@ -289,33 +245,38 @@ export default function Chat() {
 function Bubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[78%] rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap break-words",
-          isUser && "bg-primary/10 border-primary/40 text-ink",
-          !isUser && !isSystem && "bg-bg-raised border-border text-ink",
-          isSystem &&
-            "bg-secondary/10 border-secondary/30 text-secondary font-mono text-xs",
-          message.pending && "shadow-glow",
-        )}
-      >
-        <div className="flex items-center justify-between gap-3 mb-1">
-          <span className="label-mono">
+      <div className={cn(
+        "max-w-[78%] rounded-xl px-4 py-3 text-sm whitespace-pre-wrap break-words border",
+        isUser && "bg-primary/10 border-primary/20 text-ink",
+        !isUser && !isSystem && "bg-bg-raised border-border text-ink",
+        isSystem && "bg-secondary/10 border-secondary/20 text-secondary font-mono text-xs",
+        message.pending && "shadow-[0_0_12px_var(--primary-glow)]",
+      )}>
+        <div className="flex items-center justify-between gap-3 mb-1.5">
+          <span className={cn("font-display text-[10px] font-bold uppercase tracking-widest",
+            isUser ? "text-primary" : isSystem ? "text-secondary" : "text-tertiary"
+          )}>
             {isSystem ? "SYS" : isUser ? "YOU" : "AGENT"}
           </span>
-          <span className="text-[10px] text-ink-mute font-mono">
-            {formatTime(message.ts)}
-          </span>
+          <span className="text-[10px] text-ink-mute font-mono">{formatTime(message.ts)}</span>
         </div>
         {message.content}
         {message.pending && (
-          <span className="inline-block ml-1 animate-pulseDot text-primary">
-            ▍
-          </span>
+          <span className="inline-block ml-1 animate-pulseDot text-primary">▍</span>
         )}
       </div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between text-[11px]">
+      <span className="text-ink-mute">{label}:</span>
+      <span className="text-ink font-mono">{value}</span>
     </div>
   );
 }

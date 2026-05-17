@@ -10,6 +10,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from api import auth, doctor, google, viewsets, views
+from kanban.views import KanbanTaskViewSet
 
 router = DefaultRouter()
 router.register(r"sessions", viewsets.SessionViewSet, basename="session")
@@ -27,6 +28,7 @@ router.register(
 )
 router.register(r"system-state", viewsets.SystemStateViewSet, basename="system-state")
 router.register(r"dream-logs", viewsets.DreamLogViewSet, basename="dream-log")
+router.register(r"kanban/tasks", KanbanTaskViewSet, basename="kanban-task")
 
 
 urlpatterns = [

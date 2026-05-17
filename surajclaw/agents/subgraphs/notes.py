@@ -1,33 +1,16 @@
-"""Notes/research specialized ReAct agent graph."""
+"""Notes specialist subgraph (explicit agent_llm + tool_executor)."""
 from __future__ import annotations
 
-from agents.state import AgentState
-from agents.subgraphs.reactive import run_react_agent
+from agents.registry import get_agent
+from agents.subgraphs.reactive import build_agent_subgraph
 from tools.registry import get_langchain_tools
 
 
-SYSTEM_PROMPT = """You are SurajClaw's Notes Agent.
-
-Search existing notes before creating duplicates. For research tasks, search the
-web when needed, synthesize the useful facts, and write clear Markdown notes.
-Keep notes concise, source-aware, and easy to retrieve later.
-"""
-
-
 def build_notes_graph():
-    from langgraph.graph import END, StateGraph
-
-    graph = StateGraph(AgentState)
-    graph.add_node("notes", _notes_node)
-    graph.set_entry_point("notes")
-    graph.add_edge("notes", END)
-    return graph.compile()
-
-
-def _notes_node(state: AgentState) -> AgentState:
-    return run_react_agent(
-        state=state,
-        agent_id="notes",
-        system_prompt=SYSTEM_PROMPT,
-        tools=get_langchain_tools("notes", session_id=state["session_id"]),
+    definition = get_agent("notes")
+    return build_agent_subgraph(
+        "notes",
+        definition.system_prompt,
+        get_langchain_tools("notes"),
+        max_loops=definition.max_steps,
     )

@@ -54,10 +54,13 @@ LOCAL_APPS = [
     "feeds",
     "custom_tools",
     "approval",
+    "pairing",
+    "kanban",
     "chat",
     "api",
     "webhooks",
     "scheduler",
+    "web",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -82,7 +85,7 @@ WSGI_APPLICATION = None  # ASGI-only deployment
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -184,11 +187,63 @@ REST_FRAMEWORK = {
 # ---------------------------------------------------------------------------
 # Agent / LLM configuration
 # ---------------------------------------------------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
+# SurajClaw runs purely on OAuth-backed Google Gemini (Code Assist endpoint).
+# Run `python manage.py gemini_login` to authenticate; the access token is
+# stored under `google_tokens/gemini_oauth.json` and refreshed on demand.
+#
+# Default to ``gemini-3.1-flash-lite``: stable Gemini 3.x lite tier with
+# the loosest RPM cap, so chat turns stop bouncing off 429s on the
+# consumer Google AI Pro plan. Heavier models (``gemini-3.1-pro-preview``
+# for deep reasoning, ``gemini-3-flash`` for balanced) are still available
+# via /model in the TUI or ``!model <name>`` inline.
+GEMINI_OAUTH_MODEL = os.environ.get("GEMINI_OAUTH_MODEL", "gemini-3.1-flash-lite")
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "12"))
 
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-2-preview")
+# ---------------------------------------------------------------------------
+# MCP client
+# ---------------------------------------------------------------------------
+# JSON list of MCP server specs, e.g.
+#   [{"name":"playwright","transport":"stdio","command":"npx",
+#     "args":["@playwright/mcp@latest","--headless"],"env":{}},
+#    {"name":"fs","transport":"stdio","command":"npx",
+#     "args":["@modelcontextprotocol/server-filesystem","/workspace"]}]
+# Tools discovered from each server are registered with id `mcp.<name>.<tool>`.
+_MCP_SERVERS_RAW = os.environ.get("MCP_SERVERS", "")
+try:
+    import json as _json
+
+    MCP_SERVERS = _json.loads(_MCP_SERVERS_RAW) if _MCP_SERVERS_RAW else []
+except Exception:
+    MCP_SERVERS = []
+MCP_DISCOVERY_TIMEOUT = int(os.environ.get("MCP_DISCOVERY_TIMEOUT", "20"))
+
+# ---------------------------------------------------------------------------
+# Email inbound channel (IMAP poller)
+# ---------------------------------------------------------------------------
+# Reuses the existing SMTP_* envs for sending replies. Leave EMAIL_IMAP_HOST
+# blank to disable the email channel entirely.
+EMAIL_IMAP_HOST = os.environ.get("EMAIL_IMAP_HOST", "")
+EMAIL_IMAP_PORT = int(os.environ.get("EMAIL_IMAP_PORT", "993"))
+EMAIL_IMAP_USER = os.environ.get("EMAIL_IMAP_USER", "")
+EMAIL_IMAP_PASSWORD = os.environ.get("EMAIL_IMAP_PASSWORD", "")
+EMAIL_IMAP_FOLDER = os.environ.get("EMAIL_IMAP_FOLDER", "INBOX")
+EMAIL_IMAP_POLL_LIMIT = int(os.environ.get("EMAIL_IMAP_POLL_LIMIT", "20"))
+EMAIL_REPLY_ENABLED = os.environ.get("EMAIL_REPLY_ENABLED", "1").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+# Standard Django email backend wired off the SMTP_* envs you already have.
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.environ.get("SMTP_HOST", "")
+EMAIL_PORT = int(os.environ.get("SMTP_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("SMTP_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("SMTP_USE_TLS", "1").lower() in {"1", "true", "yes"}
+DEFAULT_FROM_EMAIL = os.environ.get("SMTP_FROM", "") or EMAIL_HOST_USER
+
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 
 # ---------------------------------------------------------------------------

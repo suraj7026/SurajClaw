@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 # sibling task modules here so their @shared_task decorators register on the
 # worker (otherwise beat fires e.g. `cron_job_poll` and the worker rejects it
 # as "Received unregistered task of type ...").
-from scheduler import cron_runner, dream_worker, gmail_watch  # noqa: E402, F401
+from scheduler import (  # noqa: E402, F401
+    cron_runner,
+    dream_worker,
+    email_poller,
+    gmail_watch,
+)
+from kanban import worker as _kanban_worker  # noqa: E402, F401
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +160,60 @@ def future_queue_poll() -> None:
 def db_backup() -> None:
     """Daily 03:00. Run pg_dump into the backups directory."""
     logger.info("db_backup: run")
+
+
+@shared_task
+def index_session_embedding(session_id: str) -> None:
+    """Upsert a SessionEmbedding row for ``session_id``.
+
+    Called from ``agents.graph.run_turn`` right after the assistant message
+    is persisted, so semantic recall (memory.search → semantic_search_sessions)
+    sees the conversation as soon as the next turn begins — not after the
+    ``dream_check`` batch window. Best-effort: any failure is logged and
+    swallowed so it cannot retroactively break the user's turn.
+    """
+    from django.db import transaction
+
+    from core.models import Message, Session
+    from memory.models import SessionEmbedding
+    from memory.services import embed_text
+
+    try:
+        session = Session.objects.get(id=session_id)
+    except Session.DoesNotExist:
+        logger.debug("index_session_embedding: session %s not found", session_id)
+        return
+
+    messages = list(
+        Message.objects.filter(
+            session_id=session_id,
+            role__in=[Message.Role.USER, Message.Role.ASSISTANT],
+        )
+        .order_by("-created_at")
+        .only("role", "content")[:20]
+    )[::-1]
+    if not messages:
+        return
+
+    parts: list[str] = []
+    for m in messages:
+        speaker = "User" if m.role == Message.Role.USER else "Assistant"
+        parts.append(f"{speaker}: {m.content or ''}")
+    summary = "\n\n".join(parts)
+    if len(summary) > 6000:
+        summary = summary[-6000:]  # tail-bias to most recent context
+
+    try:
+        vec = embed_text(summary)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("index_session_embedding: embed_text failed: %s", exc)
+        return
+
+    with transaction.atomic():
+        SessionEmbedding.objects.update_or_create(
+            session=session,
+            defaults={"summary_text": summary, "embedding": vec},
+        )
 
 
 @shared_task

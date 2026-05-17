@@ -21,7 +21,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -253,13 +253,70 @@ def google_oauth_callback(request: Request):
 
 def _redirect_to_integrations(
     label: str | None = None, error: str | None = None
-) -> HttpResponseRedirect:
-    """Send the operator back to the integrations page with status flags.
+) -> HttpResponse:
+    """Return a self-closing HTML page summarising the OAuth result.
 
-    The frontend reads ``?google=ok&label=...`` or ``?google=error&reason=...``
-    to show a toast.
+    Replaces the previous redirect-to-``/integrations`` flow because the
+    TUI doesn't host a dashboard page there — we just want the browser
+    tab to confirm success/failure and close itself so the operator
+    returns to the terminal.
     """
-    base = getattr(settings, "FRONTEND_INTEGRATIONS_URL", "/integrations")
     if error:
-        return HttpResponseRedirect(f"{base}?google=error&reason={error}")
-    return HttpResponseRedirect(f"{base}?google=ok&label={label or ''}")
+        title = "Connection failed"
+        color = "#dc2626"
+        body = (
+            f"Google rejected the flow: <code>{error}</code>. Re-try from the "
+            "TUI with <code>/google</code>."
+        )
+        ok = False
+    else:
+        title = "Account connected"
+        color = "#16a34a"
+        body = (
+            f"<b>{label or ''}</b> is now linked. This tab will close in a "
+            "moment — return to the TUI."
+        )
+        ok = True
+
+    # We try window.close() first. Modern browsers only honour it for tabs
+    # opened by JavaScript (window.open) — for tabs opened by webbrowser.open
+    # most browsers refuse, but Chrome+Edge often allow it for tabs that
+    # ARE the only page in that tab's history. Either way, we show clear
+    # fallback text so the operator can close manually.
+    auto_close_ms = 1500 if ok else 0
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>{title} — SurajClaw</title>
+<style>
+body {{ font-family: -apple-system, system-ui, sans-serif;
+       background: #0a0a0a; color: #e5e5e5;
+       display: flex; align-items: center; justify-content: center;
+       height: 100vh; margin: 0; padding: 2rem; }}
+.box {{ max-width: 480px; padding: 2rem;
+       border: 1px solid #262626; border-radius: 0.75rem; background: #111; }}
+h1 {{ color: {color}; margin: 0 0 1rem 0; }}
+p {{ line-height: 1.55; margin: 0.5rem 0; }}
+.hint {{ color: #737373; font-size: 0.875rem; }}
+code {{ background: #1f1f1f; padding: 0.1rem 0.4rem; border-radius: 0.25rem; }}
+button {{ background: #1f1f1f; color: #e5e5e5; border: 1px solid #404040;
+         padding: 0.5rem 1rem; border-radius: 0.375rem; cursor: pointer;
+         margin-top: 1rem; }}
+button:hover {{ background: #262626; }}
+</style></head>
+<body><div class="box">
+<h1>{title}</h1>
+<p>{body}</p>
+<p class="hint">If this tab doesn't close on its own, just close it manually
+(⌘W on macOS / Ctrl+W on Windows/Linux).</p>
+<button onclick="window.close()">Close tab</button>
+</div>
+<script>
+  // Try to auto-close. Browsers may refuse for tabs not opened via
+  // window.open() — that's why we also show the manual instructions.
+  if ({str(auto_close_ms).lower()} > 0) {{
+    setTimeout(function() {{
+      try {{ window.close(); }} catch(e) {{}}
+    }}, {auto_close_ms});
+  }}
+</script>
+</body></html>"""
+    return HttpResponse(html)

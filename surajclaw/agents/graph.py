@@ -65,6 +65,37 @@ def _source_value(source: str) -> str:
     return source if source in values else Session.Source.WEB
 
 
+def _load_prior_messages(session_id: str) -> list:
+    """Return user/assistant turns from this session as LangChain messages.
+
+    Without this, every WebSocket turn starts with an empty ``messages``
+    list and the LLM can't see what it said two messages ago — so it
+    confabulates. We exclude tool messages because the tool-call ids no
+    longer match across turns and would confuse the reactive subgraph.
+    """
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from core.models import Message
+
+    pk = _session_pk(session_id)
+    prior: list = []
+    qs = (
+        Message.objects.filter(
+            session_id=pk,
+            role__in=[Message.Role.USER, Message.Role.ASSISTANT],
+        )
+        .order_by("created_at")
+        .only("role", "content")
+    )
+    for m in qs:
+        text = m.content or ""
+        if m.role == Message.Role.USER:
+            prior.append(HumanMessage(content=text))
+        else:
+            prior.append(AIMessage(content=text))
+    return prior
+
+
 def _persist(
     session_id: str,
     role: str,
@@ -138,7 +169,14 @@ def run_turn(
 
     Returns the final response text (also persisted as a Message row).
     """
+    # Load prior turns BEFORE we persist the current user message so the
+    # initial agent state mirrors the conversation as it stood *before*
+    # this question — then we append the current message ourselves.
+    prior_messages = _load_prior_messages(session_id)
     _persist(session_id, role="user", content=message, source=source)
+    from langchain_core.messages import HumanMessage as _HM
+
+    prior_messages.append(_HM(content=message))
     model_used = None
 
     # Adapter so the subgraph only has to call one callback regardless of
@@ -150,6 +188,7 @@ def run_turn(
         if on_token is not None and payload.get("type") == "token":
             _emit_event(on_token, payload.get("content", ""))  # type: ignore[arg-type]
 
+    final = ""
     try:
         graph = _get_graph()
         initial: AgentState = {
@@ -161,18 +200,39 @@ def run_turn(
             "tool_results": [],
             "agent_results": [],
             "agent_trace": [],
+            "tool_call_log": [],
             "context": {
                 "directives": directives or {},
                 "on_event": dispatch,
             },
-            "messages": [],
+            "messages": prior_messages,
             "agent_messages": [],
             "step_count": 0,
+            "loop_count": 0,
+            "max_loops": 8,
             "done": False,
         }
-        state = graph.invoke(initial)
-        final = state.get("final_response", "")
-        model_used = state.get("model_used")
+        # Drive the orchestrator with stream_mode="updates" so we see one
+        # frame per node finish. Tool-call activity has already been
+        # forwarded via state["context"]["on_event"] from inside the
+        # subgraph nodes (see agents/subgraphs/reactive.py); here we only
+        # mirror node boundaries and capture the latest final_response.
+        active_agent = "general"
+        for update in graph.stream(initial, stream_mode="updates"):
+            if not isinstance(update, dict):
+                continue
+            for node_name, node_state in update.items():
+                if not isinstance(node_state, dict):
+                    continue
+                dispatch({"type": "node_update", "node": node_name})
+                if node_state.get("final_response"):
+                    final = node_state["final_response"]
+                if node_state.get("active_agent"):
+                    active_agent = node_state["active_agent"]
+                if node_state.get("model_used"):
+                    model_used = node_state["model_used"]
+        if not final:
+            final = "(no response)"
     except (ImportError, RuntimeError, ValueError) as exc:
         # Defensive: don't let agent errors crash the worker. Log,
         # persist the error as an assistant message, and return.
@@ -180,10 +240,6 @@ def run_turn(
         final = f"[agent error: {exc}]"
         dispatch({"type": "error", "content": final})
 
-    # The reactive subgraph already streamed `token` frames during
-    # execution. Emit a single `final` frame so clients that prefer the
-    # full text (e.g. logs) have a clean checkpoint without us re-streaming
-    # what they already saw token-by-token.
     dispatch({"type": "final", "content": final})
 
     _persist(
@@ -193,4 +249,36 @@ def run_turn(
         source=source,
         model_used=model_used or "unknown",
     )
+
+    # Update the session-level semantic index after every response so
+    # memory.search has fresh material for the *next* turn (in-session
+    # context is handled separately by _load_prior_messages above).
+    # Prefer Celery so we don't add latency to the WS turn; if the worker
+    # is down or the broker rejects us, fall back to a synchronous write
+    # — the user explicitly wants memory updated after every response.
+    pk = str(_session_pk(session_id))
+    try:
+        from scheduler.tasks import index_session_embedding
+
+        async_result = index_session_embedding.delay(pk)
+        logger.info(
+            "memory: enqueued index_session_embedding session=%s task_id=%s",
+            session_id, async_result.id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "memory: Celery enqueue failed (%s); writing embedding inline",
+            exc,
+        )
+        try:
+            from scheduler.tasks import index_session_embedding as _ise
+
+            _ise(pk)
+            logger.info("memory: wrote embedding inline for session=%s", session_id)
+        except Exception as exc2:  # noqa: BLE001
+            logger.error(
+                "memory: inline embedding write failed: %s",
+                exc2, exc_info=True,
+            )
+
     return final

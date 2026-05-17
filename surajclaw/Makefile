@@ -14,7 +14,7 @@ export DJANGO_SETTINGS_MODULE := $(DJANGO_SETTINGS)
 
 .PHONY: help venv install migrate makemigrations createsuperuser shell \
         dev worker beat celery test lint format collectstatic \
-        docker-up docker-down docker-logs backup
+        cli docker-up docker-down docker-logs backup
 
 help:
 	@echo "SurajClaw targets:"
@@ -30,6 +30,7 @@ help:
 	@echo "  make test            -- run pytest / django test suite"
 	@echo "  make lint            -- ruff check"
 	@echo "  make format          -- ruff format"
+	@echo "  make cli             -- pip install -e . (registers \`surajclaw\` console script)"
 	@echo "  make docker-up       -- docker compose up -d"
 	@echo "  make docker-down     -- docker compose down"
 	@echo "  make backup          -- pg_dump DB into ../backups/"
@@ -78,6 +79,11 @@ lint:
 
 format:
 	$(VENV)/bin/ruff format .
+
+# Install the CLI so the `surajclaw` console script lands on PATH (inside
+# the same ../.venv used by the Django backend). Run after `make install`.
+cli:
+	$(PIP) install -e .
 
 docker-up:
 	docker compose up -d

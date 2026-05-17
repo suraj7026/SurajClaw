@@ -1,0 +1,15 @@
+{% extends "web/base.html" %}
+{% block title %}Sign in — SurajClaw{% endblock %}
+{% block content %}
+<div class="login-card">
+  <h2 style="margin-top: 0;">Sign in</h2>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}" />
+    <input type="text" name="username" placeholder="username" autofocus required />
+    <input type="password" name="password" placeholder="password" required />
+    <button type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

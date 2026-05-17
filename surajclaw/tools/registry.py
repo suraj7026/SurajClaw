@@ -34,12 +34,28 @@ def list_tools() -> list[ToolDefinition]:
     return sorted(_TOOLS.values(), key=lambda t: t.id)
 
 
+def _agent_allows(allowed: frozenset[str], tool_id: str) -> bool:
+    """Match a tool id against an allowlist that supports trailing-* prefixes.
+
+    ``"mcp.playwright.*"`` matches every tool id beginning with
+    ``mcp.playwright.``. Bare strings still match exactly. This lets the
+    browser agent allow whatever Playwright MCP advertises without naming
+    every tool by hand.
+    """
+    if tool_id in allowed:
+        return True
+    for pattern in allowed:
+        if pattern.endswith("*") and tool_id.startswith(pattern[:-1]):
+            return True
+    return False
+
+
 def list_tools_for_agent(agent_id: str) -> list[ToolDefinition]:
     from agents.registry import get_agent
 
     _ensure_builtin_tools_loaded()
     agent = get_agent(agent_id)
-    return [tool for tool in list_tools() if tool.id in agent.allowed_tools]
+    return [tool for tool in list_tools() if _agent_allows(agent.allowed_tools, tool.id)]
 
 
 def execute_tool(
@@ -55,7 +71,7 @@ def execute_tool(
 
     _ensure_builtin_tools_loaded()
     agent = get_agent(agent_id)
-    if tool_id not in agent.allowed_tools:
+    if not _agent_allows(agent.allowed_tools, tool_id):
         return ToolResult(
             ok=False,
             output=f"agent `{agent_id}` cannot use tool `{tool_id}`",
@@ -80,6 +96,7 @@ def execute_tool(
         description=f"{agent_id} wants to run {tool_id} with {args}",
         session_id=session_id,
         timeout_seconds=600,
+        args=args,
     )
     if not approval.approved:
         result = ToolResult(
@@ -133,15 +150,30 @@ def get_langchain_tools(agent_id: str, session_id: str | None = None):
         args_schema = create_model(f"{_safe_tool_name(tool.id)}Args", **fields)
 
         def _runner(_tool_id=tool.id, **kwargs):
+            import json as _json
+
             result = execute_tool(
                 agent_id=agent_id,
                 tool_id=_tool_id,
                 args=kwargs,
                 session_id=session_id or "",
             )
-            if result.ok:
-                return result.output
-            return f"ERROR ({result.error or 'tool_failed'}): {result.output}"
+            if not result.ok:
+                return f"ERROR ({result.error or 'tool_failed'}): {result.output}"
+            # Without the structured payload the model only sees the human
+            # summary line ("5 match(es) for `Amazon`") and starts inventing
+            # subject lines that fit the question. Forward the structured
+            # data alongside so it can ground its answer in real fields.
+            if result.structured:
+                try:
+                    payload = _json.dumps(result.structured, default=str)
+                except (TypeError, ValueError):
+                    payload = ""
+                if payload:
+                    if len(payload) > 12000:
+                        payload = payload[:12000] + "...(truncated)"
+                    return f"{result.output}\n\ndata: {payload}"
+            return result.output
 
         tools.append(
             StructuredTool.from_function(
@@ -198,5 +230,16 @@ def _ensure_builtin_tools_loaded() -> None:
     import tools.system.sandbox  # noqa: F401
     import tools.system.workspace  # noqa: F401
     import tools.web  # noqa: F401
+    import tools.browser  # noqa: F401  -- confirm_purchase gate
+    import tools.mcp  # noqa: F401  -- registers MCP server tools at import time
+
+    # Phases 4-5 (filled later): coding agent + dynamic subagent spawning. Both
+    # modules register additional tools; import failures here are tolerated so
+    # the registry still works in fresh checkouts mid-rollout.
+    for mod in ("tools.coding", "tools.agents"):
+        try:
+            __import__(mod)
+        except ImportError:
+            pass
 
     _BUILTINS_LOADED = True

@@ -59,6 +59,21 @@ app.conf.beat_schedule = {
         "task": "scheduler.gmail_watch.gmail_watch_renew",
         "schedule": crontab(minute=0, hour=4),
     },
+    # IMAP poller for email inbound channel; no-ops if EMAIL_IMAP_HOST is blank.
+    "email-poll": {
+        "task": "scheduler.email_poller.email_poll",
+        "schedule": 120.0,  # every 2 minutes
+    },
+    # Kanban dispatcher: claim queued tasks and run them.
+    "kanban-dispatch": {
+        "task": "kanban.worker.kanban_dispatch",
+        "schedule": 30.0,
+    },
+    # Reap stale Kanban claims (worker died mid-task).
+    "kanban-reclaim-stale": {
+        "task": "kanban.worker.kanban_reclaim_stale",
+        "schedule": 300.0,
+    },
 }
 
 

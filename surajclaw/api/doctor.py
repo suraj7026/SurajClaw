@@ -85,17 +85,22 @@ def check_celery_storage() -> CheckResult:
 
 
 def check_gemini_key() -> CheckResult:
-    if settings.GEMINI_API_KEY:
+    """Gemini is now OAuth-only; report on the stored credentials instead."""
+    try:
+        from agents.gemini_oauth import load_credentials
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("gemini_auth", "error", f"gemini_oauth import failed: {exc}")
+
+    creds = load_credentials()
+    if creds is None:
         return CheckResult(
-            "gemini_key",
-            "ok",
-            "GEMINI_API_KEY present (not validated against API)",
+            "gemini_auth",
+            "warn",
+            "no OAuth credentials -- run `python manage.py gemini_login`",
         )
-    return CheckResult(
-        "gemini_key",
-        "warn",
-        "GEMINI_API_KEY missing — escalations to Gemini will fail",
-    )
+    detail = f"signed in as {creds.email or '(unknown)'}; "
+    detail += "access expired" if creds.is_expired() else "access valid"
+    return CheckResult("gemini_auth", "ok", detail)
 
 
 def check_celery_beat() -> CheckResult:

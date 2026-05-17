@@ -19,10 +19,15 @@ psycopg[binary]>=3.1
 pgvector>=0.3
 
 # --- LLM & Agents ----------------------------------------------------------
+# All inference goes through OAuth-backed Gemini (Code Assist endpoint); the
+# google-genai SDK is only kept for memory embeddings. Anthropic, OpenAI,
+# and NVIDIA NIM providers were removed -- SurajClaw is Gemini-only.
 langgraph>=0.2
 langchain>=0.2
 langchain-community>=0.2
 langchain-google-genai>=2.0
+langchain-mcp-adapters>=0.0.3
+mcp>=1.0  # official Python SDK; powers `surajclaw mcp-serve`
 
 # --- Google Workspace ------------------------------------------------------
 google-api-python-client>=2.120
@@ -48,3 +53,15 @@ croniter>=2.0
 
 # --- PDF / Markdown --------------------------------------------------------
 markdown>=3.6
+
+# --- WebUI (approval dashboard) -------------------------------------------
+django-htmx>=1.17
+
+# --- CLI client ------------------------------------------------------------
+# Used by the `surajclaw` CLI in `surajclaw/clawcli/`. httpx is already
+# pulled in above for tool HTTP calls; websockets drives the chat REPL,
+# rich renders streamed frames, and textual powers the optional `surajclaw
+# tui` full-screen chat client.
+websockets>=12.0
+rich>=13.7
+textual>=0.80

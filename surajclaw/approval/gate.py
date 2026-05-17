@@ -19,23 +19,34 @@ logger = logging.getLogger(__name__)
 # Tool ids that require confirmation before running. Kept small and explicit;
 # anything destructive MUST be listed.
 GATED_TOOLS: set[str] = {
-    "gmail_send",
-    "gcal_create",
-    "gtasks_create",
-    "gtasks_complete",
-    "gdocs_create",
-    "gsheets_write",
-    "gdrive_upload",
-    "github_merge",
-    "github_issue_create",
-    "shell_exec",
-    "fs_write",
-    "fs_delete",
+    # Google Calendar
+    "google.calendar.create_event",
+    "google.calendar.update_event",
     "google.calendar.delete_event",
+    # Google Tasks
+    "google.tasks.create_task",
+    "google.tasks.update_task",
     "google.tasks.delete_task",
+    # Google Drive
+    "google.drive.create_file",
+    "google.drive.update_file",
     "google.drive.delete_file",
+    # Google Docs
+    "google.docs.create_doc",
+    "google.docs.append_text",
+    "google.docs.replace_text",
     "google.docs.delete_doc",
+    # Google Sheets
+    "google.sheets.create_sheet",
+    "google.sheets.update_values",
+    "google.sheets.append_values",
     "google.sheets.delete_sheet",
+    # Coding (spawns the official gemini CLI; consumes Gemini quota + pushes a branch)
+    "coding.gemini_cli_run",
+    # Coding (spawns Google Antigravity's agentic IDE; pushes a branch)
+    "coding.antigravity_run",
+    # Browser confirmation gate (used before submitting checkout / payment forms)
+    "browser.confirm_purchase",
 }
 
 
@@ -59,20 +70,40 @@ def _notify(approval_id: str, description: str, session_id: str) -> None:
         logger.warning("approval notify failed: %s", exc)
 
 
+def _dynamic_gate(tool_id: str, args: dict | None) -> bool:
+    """Tools whose gating depends on call-time arguments.
+
+    Returns True if the call should be gated. Plain-list-of-ids in
+    GATED_TOOLS is the static path; this is the escape hatch for tools
+    like ``agents.spawn_subagent`` that are gated only when given certain
+    arguments (any non-empty tool grant).
+    """
+    if tool_id == "agents.spawn_subagent":
+        try:
+            from tools.agents.spawn import needs_approval
+
+            return bool(needs_approval(args or {}))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dynamic gate for %s failed: %s; defaulting to gated", tool_id, exc)
+            return True
+    return False
+
+
 def intercept_if_gated(
     *,
     tool_id: str,
     description: str,
     session_id: str,
     timeout_seconds: int = 600,
+    args: dict | None = None,
 ) -> ApprovalOutcome:
-    """If `tool_id` is in GATED_TOOLS, create an ApprovalRequest and wait.
+    """If ``tool_id`` is gated (static or dynamic), create an ApprovalRequest and wait.
 
-    For ungated tools we return immediately with approved=True. For gated
-    tools we poll the DB (simple, robust) until the row is no longer
-    pending or the timeout elapses.
+    Ungated tools return immediately approved. Gated tools create a DB row,
+    notify the user, then poll until the row leaves PENDING or the timeout
+    elapses.
     """
-    if tool_id not in GATED_TOOLS:
+    if tool_id not in GATED_TOOLS and not _dynamic_gate(tool_id, args):
         return ApprovalOutcome(approved=True, status="auto", responded_by="auto")
 
     from approval.models import ApprovalRequest

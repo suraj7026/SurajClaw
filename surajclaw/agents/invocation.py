@@ -17,7 +17,24 @@ def invoke_agent(invocation: AgentInvocation) -> AgentResult:
             structured={"error": "unknown_agent"},
         )
 
-    graph = definition.graph_factory()
+    # Direct invocation builds the agent's own per-agent subgraph (the
+    # `agent_llm + tool_executor` factory) instead of going through the
+    # top-level orchestrator. The `main` agent is special-cased because its
+    # graph_factory IS the orchestrator and we don't want recursive routing
+    # when a caller explicitly asked for it.
+    if definition.id == "main":
+        graph = definition.graph_factory()
+    else:
+        from agents.subgraphs.reactive import build_agent_subgraph
+        from tools.registry import get_langchain_tools
+
+        graph = build_agent_subgraph(
+            definition.id,
+            definition.system_prompt,
+            get_langchain_tools(definition.id),
+            max_loops=definition.max_steps,
+        )
+
     context = dict(invocation.context or {})
     prior_results = context.get("agent_results", [])
     if "memory_context" not in context:
@@ -36,10 +53,14 @@ def invoke_agent(invocation: AgentInvocation) -> AgentResult:
         "account_label": invocation.account_label,
         "step_count": 0,
         "max_steps": definition.max_steps,
+        "loop_count": 0,
+        "max_loops": definition.max_steps,
         "tool_calls": [],
         "tool_results": [],
+        "tool_call_log": [],
         "agent_results": prior_results,
         "agent_trace": [],
+        "messages": [],
         "agent_messages": [],
         "done": False,
     }
@@ -56,6 +77,18 @@ def invoke_agent(invocation: AgentInvocation) -> AgentResult:
     result = final_state.get("agent_result") or {}
     if isinstance(result, AgentResult):
         return result
+    if not result:
+        from agents.subgraphs.reactive import last_ai_text
+
+        output = final_state.get("final_response") or last_ai_text(
+            final_state.get("messages") or []
+        )
+        return AgentResult(
+            agent_id=definition.id,
+            status="ok",
+            output=output,
+            structured={"tool_call_log": final_state.get("tool_call_log", [])},
+        )
     return AgentResult(
         agent_id=definition.id,
         status=result.get("status", "ok"),

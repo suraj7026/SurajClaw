@@ -27,7 +27,11 @@ def consolidate(*, trigger: str = "auto", sessions_processed: int = 0) -> dict:
 
     entities_merged = _merge_duplicate_entities()
     entities_pruned = _prune_stale_entities(days=180)
-    notes_updated = _reindex_updated_notes()
+    # ``notes_updated`` is a real ``DreamLog`` column and a public field on
+    # the API serializer, but the actual re-indexing pass isn't wired up
+    # yet. Until it is, write 0 so the schema stays satisfied without a
+    # no-op helper function to maintain.
+    notes_updated = 0
 
     duration = time.monotonic() - t0
     summary_text = (
@@ -95,7 +99,3 @@ def _prune_stale_entities(*, days: int) -> int:
     return int(pruned)
 
 
-def _reindex_updated_notes() -> int:
-    # Placeholder: walk NOTES_DIR, re-embed any files modified since last
-    # dream. Intentionally conservative — returning 0 means "no-op this cycle".
-    return 0

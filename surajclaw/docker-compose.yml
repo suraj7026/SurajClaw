@@ -89,35 +89,11 @@ services:
       db:
         condition: service_healthy
 
-  # React dashboard. Default `dev` target runs Vite with HMR; override the
-  # build target to `nginx` for a production image (and bind to 80/443 behind
-  # your real nginx instead of mapping the dev port).
-  #
-  # The browser hits `http://localhost:${UI_HOST_PORT}` and Vite's dev-server
-  # proxy forwards /api + /ws + /admin + /static to the `web` container over
-  # the compose network (see VITE_PROXY_TARGET). VITE_API_BASE_URL is left
-  # blank on purpose so the browser uses same-origin relative URLs.
-  ui:
-    build:
-      context: ./ui
-      target: dev
-    restart: unless-stopped
-    environment:
-      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://web:8000}
-      VITE_API_BASE_URL: ""
-      VITE_WS_BASE_URL: ""
-    ports:
-      # Override `UI_HOST_PORT` in .env if 5173 is already taken on the host
-      # (e.g. another Vite project or a stray container).
-      - "127.0.0.1:${UI_HOST_PORT:-5173}:5173"
-    volumes:
-      - ./ui:/app
-      - surajclaw_ui_node_modules:/app/node_modules
-    depends_on:
-      - web
+# Operator surface is the `surajclaw` CLI (see surajclaw/clawcli/), which
+# connects to the `web` service over WebSocket. No browser UI service runs
+# here.
 
 volumes:
   surajclaw_pgdata:
   surajclaw_staticfiles:
   surajclaw_notes:
-  surajclaw_ui_node_modules:

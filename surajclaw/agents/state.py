@@ -5,6 +5,7 @@ updates from parallel branches without clobbering.
 """
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import BaseMessage
@@ -18,6 +19,10 @@ class AgentState(TypedDict, total=False):
     Keep this schema minimal — new fields cost memory per message and add
     serialization overhead. Prefer storing bulky context in the DB and
     referencing it by ID here.
+
+    ``messages`` and ``tool_call_log`` use accumulating reducers so the
+    explicit subgraph loop (``agent_llm`` -> ``tool_executor`` -> ``agent_llm``)
+    can append without clobbering prior turns.
     """
 
     session_id: str
@@ -26,8 +31,10 @@ class AgentState(TypedDict, total=False):
     tool_calls: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]
     context: dict[str, Any]  # notes + entities + session embeddings
-    messages: list[dict[str, Any]]
+    messages: Annotated[list[BaseMessage], add_messages]
     agent_messages: Annotated[list[BaseMessage], add_messages]
+    tool_call_log: Annotated[list[dict[str, Any]], operator.add]
+    route: str | None
     final_response: str
     active_agent: str
     requested_agent: str | None
@@ -38,6 +45,8 @@ class AgentState(TypedDict, total=False):
     done: bool
     step_count: int
     max_steps: int
+    loop_count: int
+    max_loops: int
     account_label: str | None
     agent_result: dict[str, Any]
     model_used: str | None

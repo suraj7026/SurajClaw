@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "surajclaw"
+version = "0.1.0"
+description = "Command-line interface for the SurajClaw personal AI backend."
+requires-python = ">=3.12"
+# Runtime deps for the CLI client. The Django backend pins everything
+# else in requirements.txt; we keep this list small so `pip install -e .`
+# in a venv that already has requirements.txt installed is a no-op.
+dependencies = [
+    "httpx>=0.27",
+    "websockets>=12.0",
+    "rich>=13.7",
+    "textual>=0.80",
+]
+
+[project.scripts]
+surajclaw = "clawcli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["clawcli*"]
+exclude = [
+    "agents*",
+    "api*",
+    "approval*",
+    "chat*",
+    "config*",
+    "core*",
+    "custom_tools*",
+    "feeds*",
+    "memory*",
+    "scheduler*",
+    "sandbox*",
+    "tools*",
+    "webhooks*",
+    "nginx*",
+    "static*",
+    "staticfiles*",
+    "notes*",
+    "notebooks*",
+    "workspace*",
+    "google_tokens*",
+]

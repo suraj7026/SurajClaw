@@ -1,0 +1,69 @@
+{% load tz %}
+<h2>Pending</h2>
+{% if pending %}
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Request</th>
+      <th>Requested</th>
+      <th>Expires</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ar in pending %}
+    <tr>
+      <td><span class="tool-id">{{ ar.tool_id }}</span></td>
+      <td class="desc">{{ ar.description }}</td>
+      <td>{{ ar.created_at|timesince }} ago</td>
+      <td>in {{ ar.expires_at|timeuntil:now }}</td>
+      <td>
+        <form hx-post="{% url 'web-approve' ar.id %}"
+              hx-target="closest section"
+              hx-swap="innerHTML"
+              style="display:inline;">
+          {% csrf_token %}
+          <button class="approve" type="submit">Approve</button>
+        </form>
+        <form hx-post="{% url 'web-deny' ar.id %}"
+              hx-target="closest section"
+              hx-swap="innerHTML"
+              style="display:inline;">
+          {% csrf_token %}
+          <button class="deny" type="submit">Deny</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No pending approvals.</p>
+{% endif %}
+
+<h2>Recently decided</h2>
+{% if recent %}
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Status</th>
+      <th>By</th>
+      <th>When</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ar in recent %}
+    <tr>
+      <td><span class="tool-id">{{ ar.tool_id }}</span></td>
+      <td><span class="pill {{ ar.status }}">{{ ar.status }}</span></td>
+      <td>{{ ar.responded_by|default:"—" }}</td>
+      <td>{{ ar.responded_at|timesince }} ago</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No recent decisions.</p>
+{% endif %}

@@ -111,15 +111,32 @@ def reset_policy_cache() -> None:
 def is_owner(channel: str, sender_id: str | int | None) -> bool:
     """Return True if ``sender_id`` is on the allowlist for ``channel``.
 
-    A *missing* allowlist (no entries, no wildcard) returns False — for a
-    personal assistant we fail closed. If you genuinely want unauthenticated
-    access (e.g. a public demo), set ``OWNER_ALLOW_FROM=*`` explicitly.
+    Two sources are merged (DB first, env second):
+
+    1. ``pairing.ApprovedSender`` rows (added at runtime via the pairing flow).
+    2. ``settings.OWNER_ALLOW_FROM`` + per-channel fallback envs.
+
+    A *missing* allowlist (no DB row, no env entry, no wildcard) returns
+    False -- single-user assistant fails closed. Set ``OWNER_ALLOW_FROM=*``
+    if you want a public demo.
     """
+    # 1. Runtime pairing DB takes precedence so the operator can grant
+    # access without redeploying.
+    try:
+        from pairing.services import is_approved
+
+        if sender_id is not None and is_approved(channel, sender_id):
+            return True
+    except Exception as exc:  # noqa: BLE001 -- pairing app might not be migrated yet
+        logger.debug("pairing lookup failed: %s", exc)
+
+    # 2. Env-based allowlist (legacy + bootstrap path).
     policy = _resolve_policy(channel)
     if not policy.has_entries:
         logger.warning(
             "auth: no owner configured for channel=%s; denying. "
-            "Set OWNER_ALLOW_FROM or %s_OWNER_ID.",
+            "Set OWNER_ALLOW_FROM, %s_OWNER_ID, or pair a sender via "
+            "`python manage.py pair`.",
             channel,
             channel.upper(),
         )

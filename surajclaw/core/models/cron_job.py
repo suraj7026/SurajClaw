@@ -67,6 +67,26 @@ class CronJob(models.Model):
     delivery_channel = models.CharField(max_length=32, blank=True)
     delivery_to = models.CharField(max_length=256, blank=True)
     delivery_webhook_url = models.URLField(blank=True)
+    # Hermes parity: optional multi-target delivery. Each entry is a dict like
+    #   {"channel": "telegram", "to": "-100123"}
+    #   {"channel": "webhook",  "url": "https://hooks.example/x"}
+    #   {"channel": "email",    "to": "you@example.com"}
+    #   {"channel": "log"}                          (just record in CronRun)
+    # When non-empty this supersedes the single delivery_* fields above.
+    delivery_targets = models.JSONField(default=list, blank=True)
+
+    # ---- model override (Hermes-style per-job routing) -------------------
+    # If set, this string is passed to the model router as the directive
+    # model for the job's turn. Accepted: "gemini", "claude", "nim", "auto",
+    # or a fully-qualified model id. Lets nightly heavy jobs go to a cheap
+    # free-tier model (NIM) while interactive chat stays on Gemini/Claude.
+    model_provider = models.CharField(max_length=64, blank=True)
+
+    # ---- output capture --------------------------------------------------
+    capture_output = models.BooleanField(
+        default=True,
+        help_text="If true, the agent's final response is stored in CronRun.summary.",
+    )
 
     # ---- failure alerting (per OpenClaw cron failure-alert pattern) ------
     fail_alert_after = models.PositiveIntegerField(

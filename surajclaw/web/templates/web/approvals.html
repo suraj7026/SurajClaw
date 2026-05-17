@@ -1,0 +1,11 @@
+{% extends "web/base.html" %}
+{% block title %}Approvals — SurajClaw{% endblock %}
+{% block content %}
+<section
+  hx-get="{% url 'web-approvals-table' %}"
+  hx-trigger="load, every 3s"
+  hx-swap="innerHTML">
+  <!-- table partial replaces this on first load -->
+  <p class="empty">Loading…</p>
+</section>
+{% endblock %}

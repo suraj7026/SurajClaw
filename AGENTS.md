@@ -5,10 +5,10 @@
 - `PersonalAI_SoftwareDoc.md` is design intent, not runtime truth. When it conflicts with code or config under `surajclaw/`, trust the code.
 
 ## Stack And Entrypoints
-- Backend is Django + Channels + Celery + Postgres/pgvector. Redis is not used; Celery uses Postgres for broker/results. Frontend is React/Vite in `surajclaw/ui/`.
-- There are two web surfaces: Django serves the lightweight chat page from `surajclaw/chat/` at `/`, and the operator console lives in `surajclaw/ui/`.
+- Backend is Django + Channels + Celery + Postgres/pgvector. Redis is not used; Celery uses Postgres for broker/results. There is no browser UI: the operator surface is the `surajclaw` CLI in `surajclaw/clawcli/`.
+- The CLI is a WebSocket client. It authenticates via DRF token (`/api/auth/login/`) and talks to the existing `ws/chat/<session_uuid>/` consumer in `surajclaw/chat/consumers.py`. Slash commands (`/help`, `/agents`, `/agent`, `/stop`, `/approve`, ...) and inline directives (`!model`, `!thinking`) are server-rendered, so the CLI just streams frames.
 - `surajclaw/manage.py` defaults to `config.settings.development`.
-- HTTP and WebSocket traffic both enter through `surajclaw/config/asgi.py`; `make dev` runs Daphne on `:8000`.
+- HTTP and WebSocket traffic both enter through `surajclaw/config/asgi.py`; `make dev` runs Daphne on `:8000`. The HTTP root `/` returns a small JSON info doc — there is no HTML page.
 - Chat turns run inline in `chat/consumers.py`; the consumer passes a direct token callback to `agents.graph.run_turn()`. Celery is only needed for scheduled/background jobs.
 - `agents/orchestrator.py` is intentionally thin. Normal chat invokes the `general` agent, which uses Gemini tool calling and can delegate to `google_workspace`, `code_executor`, or `notes` subagents.
 
@@ -19,9 +19,10 @@
 - Core service for local dev: `cd surajclaw && docker compose up -d db`
 - Backend server: `cd surajclaw && make dev`
 - Worker / scheduler: `cd surajclaw && make worker`, `cd surajclaw && make beat`, or `cd surajclaw && make celery`
-- Frontend: `cd surajclaw/ui && npm install && npm run dev`
-- Full stack via Compose: `cd surajclaw && docker compose up`
-- Health check: `cd surajclaw && python manage.py doctor`
+- CLI install (registers the `surajclaw` console script): `cd surajclaw && make cli`
+- CLI usage: `surajclaw login`, then `surajclaw chat` (line-based REPL) or `surajclaw tui` (full-screen Textual UI). Other subcommands: `surajclaw whoami`, `surajclaw doctor`, `surajclaw status`, `surajclaw logout`.
+- Full stack via Compose: `cd surajclaw && docker compose up` (just Django + Postgres + Celery; the CLI runs on the host).
+- Health check: `cd surajclaw && python manage.py doctor` (or `surajclaw doctor` from any shell with stored credentials)
 - Google account bootstrap: `cd surajclaw && python manage.py google_oauth_login --account <label>`
 
 ## Data And Env
@@ -33,12 +34,15 @@
 
 ## Verification
 - `cd surajclaw && make test` is just `python manage.py test`.
-- There are currently no checked-in Django or frontend test cases, no `pytest`/Vitest setup, and no `.github/workflows/` or pre-commit config. Expect manual smoke testing to be the real verification path.
-- Prefer targeted checks: `cd surajclaw && python manage.py doctor`, `cd surajclaw && python manage.py test_gmail --account <label>`, and `cd surajclaw/ui && npm run build`.
-- `make lint` / `make format` call Ruff, but `surajclaw/requirements.txt` does not install Ruff. `ui/package.json` defines `npm run lint`, but the repo does not currently declare ESLint or a repo-local ESLint config. Do not assume either lint command works in a fresh clone.
+- There are currently no checked-in Django test cases, no `pytest` setup, and no `.github/workflows/` or pre-commit config. Expect manual smoke testing to be the real verification path.
+- Prefer targeted checks: `cd surajclaw && python manage.py check`, `cd surajclaw && python manage.py doctor`, and `cd surajclaw && python manage.py test_gmail --account <label>`.
+- For the CLI, smoke test with `surajclaw doctor` and a short `surajclaw chat` round-trip (send "hello", expect a `final` frame).
+- `make lint` / `make format` call Ruff, but `surajclaw/requirements.txt` does not install Ruff. Do not assume the lint command works in a fresh clone.
 
 ## Wiring Gotchas
 - Tool registration is import-side-effect based. If you add a new tool module, wire it into `tools.registry._ensure_builtin_tools_loaded()` or it never becomes visible.
 - Celery task registration is also import-side-effect based. New task modules must be imported from `scheduler/tasks.py` or workers will reject them as unregistered.
-- Vite dev proxy defaults to `http://localhost:8000` and forwards `/api`, `/ws`, `/admin`, and `/static`; keep `VITE_API_BASE_URL` and `VITE_WS_BASE_URL` blank for same-origin dev unless you intentionally need cross-origin URLs.
-- `surajclaw/ui/vite.config.ts` is the source file. The repo also tracks emitted `vite.config.js` and `vite.config.d.ts` from `tsc -b`, so edit the `.ts` file first.
+- The CLI in `surajclaw/clawcli/` is a thin WebSocket client; it does NOT re-implement the agent loop. Slash commands and directives live server-side in `chat/commands.py` and `chat/directives.py`. New chat features go there. Two front-ends: line-based REPL (`clawcli/chat.py`) and full-screen TUI (`clawcli/tui.py`, Textual). Both consume the same WS frame stream and share auth via `_resolve_chat_auth` in `main.py`.
+- Live LLM streaming: `agents/subgraphs/reactive.py::_stream_llm` drives `bound.stream(...)` and emits `{type: "token", ...}` frames on the consumer's `on_event`. If the bound runnable can't stream, it falls back to `.invoke()` transparently.
+- The CLI server URL comes from (in order): `--server` flag, stored credentials, `SURAJCLAW_SERVER` env var, default `http://127.0.0.1:8000`. Token auth via DRF (`Authorization: Token <key>`); WebSocket reuses the same token via the `?token=` query string that `ChatConsumer._identity_from_scope` already reads.
+- `pip install -e .` (or `make cli`) registers the `surajclaw` console script via `pyproject.toml`; the package itself is `surajclaw/clawcli/`.

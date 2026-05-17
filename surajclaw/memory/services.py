@@ -18,18 +18,18 @@ logger = logging.getLogger(__name__)
 
 
 def embed_text(text: str) -> list[float]:
-    """Generate an embedding for ``text``.
+    """Generate an embedding for ``text`` using the OAuth-backed Code Assist API.
 
-    Provider routing:
-      * Google AI ``embedContent`` endpoint (uses GEMINI_API_KEY).
-
-    Falls back to a zero-vector on failure so retrieval degrades gracefully
-    rather than crashing the agent pipeline.
+    Uses the same Google Gemini OAuth credentials as the chat agent
+    (``manage.py gemini_login``). Falls back to a zero-vector on any
+    failure so retrieval degrades gracefully rather than crashing the
+    agent pipeline -- callers must guard against the zero case via
+    ``_is_zero_vector`` before issuing the pgvector search.
     """
     model = (settings.EMBEDDING_MODEL or "").strip()
     dims = settings.EMBEDDING_DIMENSIONS
     try:
-        vec = _embed_gemini(text, model, dims)
+        vec = _embed_via_oauth(text, model, dims)
     except Exception as exc:  # noqa: BLE001 -- never crash agent turns on embeddings
         logger.warning("embed_text(%s) failed: %s", model, exc)
         return [0.0] * dims
@@ -47,34 +47,54 @@ def _is_zero_vector(vec: Sequence[float]) -> bool:
     return not vec or all(abs(value) < 1e-12 for value in vec)
 
 
-def _embed_gemini(text: str, model: str, dims: int) -> list[float]:
-    """Hit the Google AI generative embeddings endpoint via REST.
+def _embed_via_oauth(text: str, model: str, dims: int) -> list[float]:
+    """Embed via the Generative Language API using the gemini_login OAuth token.
 
-    We talk REST (not the langchain wrapper) so we can pass
-    ``outputDimensionality`` and avoid loading the LC client just for one
-    call. Endpoint:
-      POST https://generativelanguage.googleapis.com/v1beta/{model}:embedContent
+    The Code Assist endpoint (``cloudcode-pa.googleapis.com``) only exposes
+    ``generateContent`` / ``streamGenerateContent`` — it returns 404 for any
+    embed path. Embeddings live on a separate Google service:
+
+        POST https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent
+
+    The ``cloud-platform`` OAuth scope that ``gemini_login`` already
+    requests covers this service, so we reuse the same bearer token.
     """
     import httpx
 
-    api_key = getattr(settings, "GEMINI_API_KEY", "") or ""
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY missing; cannot use Gemini embeddings")
-
-    # Google accepts both "gemini-embedding-X" and "models/gemini-embedding-X".
-    qualified = model if model.startswith("models/") else f"models/{model}"
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/{qualified}:embedContent"
-        f"?key={api_key}"
+    from agents.gemini_oauth import (
+        CODE_ASSIST_USER_AGENT,
+        get_valid_access_token,
+        load_credentials,
     )
-    body = {
-        "model": qualified,
+
+    creds = load_credentials()
+    if creds is None:
+        raise RuntimeError(
+            "no Gemini OAuth credentials; run `python manage.py gemini_login`"
+        )
+    access_token = get_valid_access_token()
+
+    # The Generative Language API expects bare model ids ("text-embedding-004"),
+    # NOT the qualified "models/text-embedding-004" form Code Assist uses.
+    bare_model = model.removeprefix("models/")
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{bare_model}:embedContent"
+    )
+    body: dict[str, object] = {
         "content": {"parts": [{"text": text}]},
-        # Request a fixed-size embedding so it lines up with EMBEDDING_DIMENSIONS
-        # (and our pgvector column width).
-        "outputDimensionality": dims,
     }
-    resp = httpx.post(url, json=body, timeout=30.0)
+    # ``outputDimensionality`` is only valid for models that support it
+    # (text-embedding-004 supports 256-768; gemini-embedding-001 supports
+    # arbitrary dims). Always include it; the server ignores it for models
+    # that don't.
+    body["outputDimensionality"] = dims
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "User-Agent": CODE_ASSIST_USER_AGENT,
+    }
+    resp = httpx.post(url, json=body, headers=headers, timeout=30.0)
     resp.raise_for_status()
     payload = resp.json()
     return (payload.get("embedding") or {}).get("values") or []
